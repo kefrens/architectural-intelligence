@@ -1,0 +1,31 @@
+{
+  "name": "@archisimple/architectural-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@archisimple/ai-engine": "workspace:*",
+    "@archisimple/automation-api": "workspace:*",
+    "@archisimple/building-model": "workspace:*",
+    "@archisimple/inspector": "workspace:*",
+    "@archisimple/shared": "workspace:*",
+    "@archisimple/spatial": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "vitest": "^4.1.8"
+  }
+}

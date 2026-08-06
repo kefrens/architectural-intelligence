@@ -103,6 +103,39 @@ describe('architectural-intelligence reasons but never executes', () => {
     expect(file.source).not.toMatch(/\bsessionStorage[.[]/);
   });
 
+  /**
+   * ADR-0027.1 Rule 3 — one responsibility per artefact.
+   *
+   * The Architectural Brief owns intent, and the Geometry Plan owns geometry.
+   * The only thing that keeps them apart three sprints from now is that a Brief
+   * *cannot* carry a `CommandRequest`, which is a property of what
+   * `brief/architectural-brief.ts` is allowed to import rather than of anyone's
+   * discipline. `brief-proposal.ts` is the deliberate exception: it is the
+   * bridge to the AI Workspace's `Proposal`, not part of the artefact.
+   */
+  describe('the Brief owns no geometry (ADR-0027.1 Rule 3)', () => {
+    const artefactSources = sources.filter(
+      (file) => file.path.startsWith('brief/') && file.path !== 'brief/brief-proposal.ts'
+    );
+
+    it('finds the brief sources', () => {
+      expect(artefactSources.length).toBeGreaterThan(0);
+    });
+
+    it.each(artefactSources.map((file) => file.path))(
+      '%s imports no execution vocabulary',
+      (path) => {
+        const file = artefactSources.find((candidate) => candidate.path === path)!;
+
+        for (const specifier of importsOf(file.source)) {
+          expect(specifier).not.toBe('@archisimple/automation-api');
+          expect(specifier).not.toBe('@archisimple/geometry');
+        }
+        expect(code(file.source)).not.toMatch(/\bCommandRequest\b/);
+      }
+    );
+  });
+
   it('declares no runtime dependency outside its permitted layer', () => {
     const manifest = JSON.parse(readFileSync(join(SRC_DIR, '..', 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;

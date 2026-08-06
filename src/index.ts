@@ -99,6 +99,46 @@ export {
 export { BULK_STEP_THRESHOLD, toProposal } from './proposal/proposal-builder';
 
 export {
+  answerClarification,
+  ARCHITECTURAL_BRIEF_KIND,
+  assembleBrief,
+  assembleBriefFromFields,
+  BRIEF_REQUIREMENT_SOURCES,
+  BRIEF_TOPICS,
+  briefRequirement,
+  clarificationBlocker,
+  clarificationFor,
+  clarificationQuestion,
+  classifyRequest,
+  createBrief,
+  createInMemoryBriefDraftStore,
+  describeBrief,
+  describeClarification,
+  desiredSpacesFrom,
+  isBriefComplete,
+  MANDATORY_BRIEF_TOPICS,
+  readBriefTopics,
+  REQUEST_LANES,
+  reviseBrief,
+  startBriefDraft,
+  summarizeBrief,
+  toBriefProposal,
+  withRequirement,
+  type ArchitecturalBrief,
+  type AssembleBriefOptions,
+  type BriefDraftStore,
+  type BriefRequirement,
+  type BriefRequirementSource,
+  type BriefTopic,
+  type ClarificationDialogue,
+  type ClarificationQuestion,
+  type ClassifyRequestOptions,
+  type DesiredSpace,
+  type RequestClassification,
+  type RequestLane
+} from './brief';
+
+export {
   ARCHITECTURAL_CONTEXT_PROVIDER_ID,
   createArchitecturalContextProvider,
   type ArchitecturalContextFragment

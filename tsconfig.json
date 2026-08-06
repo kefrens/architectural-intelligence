@@ -12,7 +12,8 @@
     { "path": "../ai-engine" },
     { "path": "../building-model" },
     { "path": "../spatial" },
-    { "path": "../inspector" }
+    { "path": "../inspector" },
+    { "path": "../skills" }
   ],
   "include": ["src/**/*.ts"]
 }

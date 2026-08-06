@@ -58,7 +58,8 @@
  *   |
  *   |-- direct-execution      -> interpretIntent, exactly as before this sprint
  *   |-- brief-generation      -> an Architectural Brief, offered for approval
- *   `-- clarification-required-> one focused question, draft kept for next turn
+ *   |-- clarification-required-> one focused question, draft kept for next turn
+ *   `-- programme-generation  -> a Space Programme from the approved Brief (27.9)
  * ```
  *
  * `interpretIntent` is deliberately *not* classified. It is the entry point a
@@ -67,6 +68,11 @@
  * construction. That is what keeps Story 27.8.3's promise mechanical rather than
  * remembered: every path that worked before this sprint still reaches the
  * planner without passing through a classifier.
+ *
+ * Sprint 27.9 added the fourth lane and nothing else to this shape. It is
+ * reachable only when a {@link PlanningArtefactReader} is supplied *and* the
+ * project has an approved Brief, so a host that has not opted in classifies
+ * exactly as it did in 27.8.
  */
 
 import type { Proposal } from '@archisimple/ai-engine';
@@ -95,6 +101,17 @@ import {
   type ArchitecturalOperationProvider,
   type PlanBlocker
 } from './planning';
+import {
+  describeProgramme,
+  synthesizeProgramme,
+  toProgrammeProposal,
+  type SpaceProgramme
+} from './programme';
+import { PLANNING_STAGES } from './planning/planning-stage';
+import {
+  type ApprovedArtefact,
+  type PlanningArtefactReader
+} from './artefacts/planning-artefact-reader';
 import { toProposal } from './proposal/proposal-builder';
 import {
   answerArchitecturalQuestion,
@@ -116,6 +133,13 @@ export interface ArchitecturalIntelligenceServiceOptions {
    * remembering what was already answered.
    */
   readonly briefDrafts?: BriefDraftStore;
+  /**
+   * Where this project's approved planning artefacts are read from (Sprint
+   * 27.9). Omitted means programme generation is unavailable: the classifier
+   * never reaches its lane, and a request for one is answered by saying a brief
+   * has to be approved first.
+   */
+  readonly artefacts?: PlanningArtefactReader;
 }
 
 /**
@@ -142,17 +166,21 @@ export interface ArchitecturalResponse {
   readonly brief?: ArchitecturalBrief;
   /** Present when the turn asked for something the Brief still needs (Story 27.8.2). */
   readonly clarification?: ClarificationDialogue;
+  /** Present when the turn produced a Space Programme (Sprint 27.9). Carried by `proposal` too. */
+  readonly programme?: SpaceProgramme;
 }
 
 export class ArchitecturalIntelligenceService {
   private readonly knowledge: BuildingKnowledge;
   private readonly planner: ArchitecturalPlanner;
   private readonly briefDrafts: BriefDraftStore | undefined;
+  private readonly artefacts: PlanningArtefactReader | undefined;
 
   constructor(options: ArchitecturalIntelligenceServiceOptions) {
     this.knowledge = options.knowledge;
     this.planner = options.planner ?? defaultPlanner();
     this.briefDrafts = options.briefDrafts;
+    this.artefacts = options.artefacts;
   }
 
   /**
@@ -192,11 +220,23 @@ export class ArchitecturalIntelligenceService {
       return continued;
     }
 
-    const classification = classifyRequest(utterance);
+    const approvedBrief = this.approvedBrief();
+    const classification = classifyRequest(utterance, {
+      hasApprovedBrief: approvedBrief !== undefined
+    });
     const intent = recognizeIntent(utterance);
 
     if (classification.lane === REQUEST_LANES.DirectExecution) {
       return { ...this.interpretIntent(intent), classification };
+    }
+
+    if (classification.lane === REQUEST_LANES.ProgrammeGeneration) {
+      // The lane is only reachable when the reader answered, so `approvedBrief`
+      // is present here by construction; the guard is for the type, not for a
+      // case that can occur.
+      return approvedBrief === undefined
+        ? { intent, message: NO_APPROVED_BRIEF, classification }
+        : { ...this.generateProgramme(approvedBrief, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.BriefGeneration) {
@@ -218,6 +258,50 @@ export class ArchitecturalIntelligenceService {
       message: describeClarification(clarification),
       clarification,
       classification
+    };
+  }
+
+  /**
+   * The Brief this project has approved, if any (Sprint 27.9, Story 27.9.0).
+   *
+   * Read through the injected port and narrowed here — the reader answers with
+   * an opaque `value`, because the layer that stores artefacts is not the layer
+   * that knows their shapes. A stored artefact of the right kind whose value is
+   * not an object is treated as absent rather than trusted.
+   */
+  approvedBrief(): ArchitecturalBrief | undefined {
+    const artefact = this.artefacts?.current(ARCHITECTURAL_BRIEF_KIND);
+    return isBriefValue(artefact) ? (artefact.value as ArchitecturalBrief) : undefined;
+  }
+
+  /**
+   * Builds and offers the Space Programme for an approved Brief (Story 27.9.1).
+   *
+   * Public so a host can generate one without going through an utterance — the
+   * tool path does exactly that, and so would a menu command.
+   */
+  generateProgramme(
+    brief: ArchitecturalBrief,
+    intent: ArchitecturalIntent = recognizeIntent(brief.utterance)
+  ): ArchitecturalResponse {
+    const synthesized = synthesizeProgramme({ brief });
+    if (!synthesized.ok) {
+      return { intent, message: synthesized.message };
+    }
+
+    // Rule 10: providers enrich the artefact before it is offered, never after
+    // it is approved. A programme the user approved is what the user saw.
+    const programme = this.planner.enrich(
+      PLANNING_STAGES.Programme,
+      synthesized.programme,
+      this.knowledge
+    );
+
+    return {
+      intent,
+      message: describeProgramme(programme),
+      proposal: toProgrammeProposal(programme),
+      programme
     };
   }
 
@@ -303,6 +387,17 @@ export class ArchitecturalIntelligenceService {
     const proposal = toProposal(result.plan);
     return { intent, message: describePlan(result.plan.reasoning, proposal), proposal };
   }
+}
+
+/** What a programme request gets when no Brief has been approved (Sprint 27.9). */
+const NO_APPROVED_BRIEF =
+  'There is no approved brief yet, so there is nothing to write a programme from. Tell me what you want to build and I will start one.';
+
+/** Whether a stored artefact really carries a Brief-shaped value. */
+function isBriefValue(
+  artefact: ApprovedArtefact | undefined
+): artefact is ApprovedArtefact & { readonly value: object } {
+  return artefact !== undefined && typeof artefact.value === 'object' && artefact.value !== null;
 }
 
 function defaultPlanner(): ArchitecturalPlanner {

@@ -89,12 +89,49 @@ export {
   WALL_PROPERTY_OPERATION_ID,
   type ArchitecturalCapability,
   type ArchitecturalOperationProvider,
+  PLANNING_STAGES,
   type ArchitecturalPlan,
   type PlanBlocker,
   type PlanBlockerReason,
+  type PlanningStage,
+  type PlanningStageCapability,
+  type PlanningStageProvider,
   type PlanResult,
   type PlanStep
 } from './planning';
+
+export {
+  ADJACENCY_STRENGTHS,
+  AREA_SOURCES,
+  createProgramme,
+  describeProgramme,
+  FUNCTIONAL_ZONES,
+  isProgrammeComplete,
+  matchesBrief,
+  programmeSpace,
+  reviseProgramme,
+  SPACE_PRIORITIES,
+  SPACE_PROGRAMME_KIND,
+  summarizeProgramme,
+  synthesizeProgramme,
+  toProgrammeProposal,
+  type AdjacencyStrength,
+  type AreaSource,
+  type BriefProvenance,
+  type FunctionalZone,
+  type IntendedAdjacency,
+  type ProgrammeSpace,
+  type ProgrammeSynthesisResult,
+  type SpacePriority,
+  type SpaceProgramme,
+  type SynthesizeProgrammeOptions
+} from './programme';
+
+export {
+  createInMemoryPlanningArtefactReader,
+  type ApprovedArtefact,
+  type PlanningArtefactReader
+} from './artefacts/planning-artefact-reader';
 
 export { BULK_STEP_THRESHOLD, toProposal } from './proposal/proposal-builder';
 

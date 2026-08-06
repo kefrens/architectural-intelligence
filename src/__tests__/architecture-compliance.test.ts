@@ -38,6 +38,12 @@ const ALLOWED_ARCHISIMPLE_PACKAGES = new Set([
   '@archisimple/building-model',
   '@archisimple/inspector',
   '@archisimple/shared',
+  // Sprint 27.9: the Space Programme derives target areas through the Skills
+  // Platform rather than computing them here. ADR-0027 names this integration
+  // path ("Option C — Skills called by the Planner (supported)"), and it holds
+  // the layering: skills depend only on `geometry` and `shared`, mutate
+  // nothing, and cannot reach the Automation API.
+  '@archisimple/skills',
   '@archisimple/spatial'
 ]);
 

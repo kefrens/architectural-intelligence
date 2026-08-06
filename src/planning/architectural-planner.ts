@@ -28,14 +28,28 @@ import type {
   ArchitecturalOperationProvider
 } from './architectural-operation';
 import { blocked, PLAN_BLOCKER_REASONS, type PlanResult } from './architectural-plan';
+import type {
+  PlanningStage,
+  PlanningStageCapability,
+  PlanningStageProvider
+} from './planning-stage';
 
 export class ArchitecturalPlanner {
   private readonly providers = new Map<string, ArchitecturalOperationProvider>();
   private readonly byAction = new Map<string, ArchitecturalOperationProvider>();
+  /**
+   * Stage providers (Sprint 27.9), in registration order per stage.
+   *
+   * A separate index from `byAction` rather than a widened one: the two answer
+   * different questions with different contracts, and a single map keyed on
+   * "action or stage" would make every lookup narrow a union it did not need.
+   * Ids are still unique across both, which is what {@link takenId} enforces.
+   */
+  private readonly byStage = new Map<PlanningStage, PlanningStageProvider[]>();
 
   /** @throws when the provider id, or any action it declares, is already registered. */
   registerProvider(provider: ArchitecturalOperationProvider): void {
-    if (this.providers.has(provider.id)) {
+    if (this.takenId(provider.id)) {
       throw new Error(`Duplicate architectural operation provider id "${provider.id}".`);
     }
     for (const action of provider.actions) {
@@ -53,11 +67,17 @@ export class ArchitecturalPlanner {
     }
   }
 
-  /** Removes a provider and every action it declared. */
+  /**
+   * Removes a provider and every action it declared.
+   *
+   * Since Sprint 27.9 this also removes a stage provider registered under the
+   * same id — ids are unique across both kinds, so a caller unregistering what
+   * it registered does not have to remember which kind it was.
+   */
   unregisterProvider(id: string): boolean {
     const provider = this.providers.get(id);
     if (provider === undefined) {
-      return false;
+      return this.unregisterStageProvider(id);
     }
     for (const action of provider.actions) {
       if (this.byAction.get(action) === provider) {
@@ -68,7 +88,7 @@ export class ArchitecturalPlanner {
   }
 
   registeredProviderIds(): readonly string[] {
-    return [...this.providers.keys()];
+    return [...this.providers.keys(), ...this.stageProviderIds()];
   }
 
   /** Every action currently plannable, and which provider owns it. */
@@ -77,6 +97,101 @@ export class ArchitecturalPlanner {
       action,
       providerId: provider.id
     }));
+  }
+
+  // --- Planning stages (Sprint 27.9, ADR-0027.1 Rule 10) -------------------------
+
+  /**
+   * Registers a provider that enriches a planning artefact.
+   *
+   * A stage is **not** exclusive: several providers may enrich one stage, and
+   * they run in registration order. Only the id is unique — across operation and
+   * stage providers alike, so one `unregisterProvider` call means one thing.
+   *
+   * @throws when the provider id is already registered.
+   */
+  registerStageProvider(provider: PlanningStageProvider): void {
+    if (this.takenId(provider.id)) {
+      throw new Error(`Duplicate architectural provider id "${provider.id}".`);
+    }
+    const existing = this.byStage.get(provider.stage);
+    if (existing === undefined) {
+      this.byStage.set(provider.stage, [provider]);
+      return;
+    }
+    existing.push(provider);
+  }
+
+  /** Removes a stage provider. Returns whether one was registered under this id. */
+  unregisterStageProvider(id: string): boolean {
+    for (const [stage, providers] of this.byStage) {
+      const index = providers.findIndex((provider) => provider.id === id);
+      if (index === -1) {
+        continue;
+      }
+      providers.splice(index, 1);
+      if (providers.length === 0) {
+        this.byStage.delete(stage);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** The providers enriching this stage, in registration order. */
+  stageProviders(stage: PlanningStage): readonly PlanningStageProvider[] {
+    return this.byStage.get(stage) ?? [];
+  }
+
+  /** Every stage currently enriched, and by whom. */
+  stageCapabilities(): readonly PlanningStageCapability[] {
+    return [...this.byStage.entries()].flatMap(([stage, providers]) =>
+      providers.map((provider) => ({ stage, providerId: provider.id }))
+    );
+  }
+
+  /**
+   * Folds every provider for `stage` over `artefact`, each seeing what the
+   * previous one produced.
+   *
+   * A provider that throws is skipped and the fold continues from the last good
+   * artefact — the same isolation {@link plan} gives an operation provider, and
+   * for the same reason: a misbehaving plugin should cost its own contribution,
+   * not the user's programme. A provider that returns `undefined` or a non-object
+   * is treated as having abstained rather than as having emptied the artefact.
+   */
+  enrich<TArtefact extends object>(
+    stage: PlanningStage,
+    artefact: TArtefact,
+    knowledge: BuildingKnowledge
+  ): TArtefact {
+    let current = artefact;
+    for (const provider of this.stageProviders(stage)) {
+      try {
+        const enriched = (provider as PlanningStageProvider<TArtefact>).enrich(current, knowledge);
+        if (typeof enriched === 'object' && enriched !== null) {
+          current = enriched;
+        }
+      } catch {
+        // Deliberately swallowed: there is no conversational turn to report this
+        // in — enrichment happens inside building an artefact the user has not
+        // seen yet — and the alternative is losing the whole artefact to one
+        // provider's bug.
+        continue;
+      }
+    }
+    return current;
+  }
+
+  private stageProviderIds(): readonly string[] {
+    return [...this.byStage.values()].flatMap((providers) =>
+      providers.map((provider) => provider.id)
+    );
+  }
+
+  /** Ids are unique across both kinds of provider, so unregistering by id is unambiguous. */
+  private takenId(id: string): boolean {
+    return this.providers.has(id) || this.stageProviderIds().includes(id);
   }
 
   /**

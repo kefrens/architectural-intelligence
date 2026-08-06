@@ -35,3 +35,10 @@ export {
   createWallPropertyOperationProvider,
   WALL_PROPERTY_OPERATION_ID
 } from './operations/wall-property-operation';
+
+export {
+  PLANNING_STAGES,
+  type PlanningStage,
+  type PlanningStageCapability,
+  type PlanningStageProvider
+} from './planning-stage';

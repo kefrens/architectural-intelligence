@@ -22,6 +22,7 @@
     "@archisimple/building-model": "workspace:*",
     "@archisimple/inspector": "workspace:*",
     "@archisimple/shared": "workspace:*",
+    "@archisimple/skills": "workspace:*",
     "@archisimple/spatial": "workspace:*"
   },
   "devDependencies": {

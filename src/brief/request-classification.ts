@@ -43,7 +43,17 @@ export const REQUEST_LANES = {
   /** Enough was said to write a Brief without asking anything. */
   BriefGeneration: 'brief-generation',
   /** Architectural, but mandatory information is missing. */
-  ClarificationRequired: 'clarification-required'
+  ClarificationRequired: 'clarification-required',
+  /**
+   * The project has an approved Brief and the user is asking for the programme
+   * that follows from it (Sprint 27.9).
+   *
+   * Reachable only when an approved Brief actually exists — see
+   * {@link ClassifyRequestOptions.hasApprovedBrief}. "Show me the spaces" with
+   * no brief behind it is not a programme request, it is a question about a
+   * project, and it stays in the direct lane where it has always been.
+   */
+  ProgrammeGeneration: 'programme-generation'
 } as const;
 
 export type RequestLane = (typeof REQUEST_LANES)[keyof typeof REQUEST_LANES];
@@ -87,7 +97,30 @@ export interface ClassifyRequestOptions {
    * {@link REQUEST_LANES.BriefGeneration}, not as another round of questions.
    */
   readonly known?: readonly string[];
+  /**
+   * Whether this project has an approved Architectural Brief (Sprint 27.9).
+   *
+   * Defaults to `false`, which is what keeps the programme lane invisible to
+   * every caller that has not opted in — including every Sprint 27.8 caller and
+   * every one of its tests.
+   */
+  readonly hasApprovedBrief?: boolean;
 }
+
+/**
+ * Words that ask for the programme rather than for a building.
+ *
+ * Deliberately narrow. This lane is only reachable when an approved Brief
+ * exists, so the classifier can afford to want an explicit request — and a
+ * user who says something else entirely after approving a Brief has changed the
+ * subject, not asked for a programme.
+ */
+const PROGRAMME_WORDS =
+  /\b(space\s+programme|space\s+program|programme|program|room\s+schedule|schedule\s+of\s+accommodation|room\s+list|the\s+spaces)\b/i;
+
+/** Verbs that ask for something to be produced from what already exists. */
+const PROGRAMME_VERBS =
+  /\b(generate|create|build|make|write|draw\s+up|produce|prepare|work\s+out|now|next|continue|proceed|go\s+ahead)\b/i;
 
 export function classifyRequest(
   utterance: string,
@@ -100,6 +133,24 @@ export function classifyRequest(
   // Platform can answer it today, which is the definition of Direct Execution.
   if (recognizeIntent(trimmed).kind === ARCHITECTURAL_INTENT_KINDS.Question) {
     return direct('This is a question about the existing project.');
+  }
+
+  // The programme lane (Sprint 27.9), checked before the dwelling test because
+  // "now write the programme for my house" names a dwelling *and* asks for the
+  // next stage — and re-briefing a project that already has an approved brief
+  // is the one thing the user cannot have meant.
+  if (options.hasApprovedBrief === true && PROGRAMME_WORDS.test(trimmed)) {
+    if (PROGRAMME_VERBS.test(trimmed)) {
+      return {
+        lane: REQUEST_LANES.ProgrammeGeneration,
+        reason: 'This asks for the space programme, and a brief has been approved.',
+        signals: ['approved brief'],
+        missing: []
+      };
+    }
+    // "What is in the programme?" is a question about an artefact, not a request
+    // to build one, and this sprint has nothing that answers it.
+    return direct('This mentions the programme but asks for nothing to be produced.');
   }
 
   const signals: string[] = [];

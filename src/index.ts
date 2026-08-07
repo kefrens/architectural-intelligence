@@ -128,6 +128,31 @@ export {
 } from './programme';
 
 export {
+  createGeometryGraph,
+  describeEvaluation,
+  describeGeometry,
+  evaluateGeometryGraph,
+  expectedInstances,
+  gateGeometryGraph,
+  GEOMETRY_GRAPH_KIND,
+  isGeometryGraphComplete,
+  matchesLayout,
+  reviseGeometryGraph,
+  storeyArea,
+  summarizeGeometryGraph,
+  synthesizeGeometry,
+  toGeometryProposal,
+  type GeometryAdjacency,
+  type GeometryGraph,
+  type GeometrySynthesisResult,
+  type LayoutProvenance,
+  type OpeningCandidate,
+  type RoomPolygon,
+  type SynthesizeGeometryOptions,
+  type WallCandidate
+} from './geometry';
+
+export {
   circulationNodeId,
   computeLayoutQuality,
   createLayoutPlan,

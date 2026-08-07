@@ -60,7 +60,8 @@
  *   |-- brief-generation      -> an Architectural Brief, offered for approval
  *   |-- clarification-required-> one focused question, draft kept for next turn
  *   |-- programme-generation  -> a Space Programme from the approved Brief (27.9)
- *   `-- layout-generation     -> a Layout Plan from the approved Programme (28.0)
+ *   |-- layout-generation     -> a Layout Plan from the approved Programme (28.0)
+ *   `-- geometry-generation   -> a Geometry Graph from the approved Layout (28.1a)
  * ```
  *
  * `interpretIntent` is deliberately *not* classified. It is the entry point a
@@ -109,7 +110,21 @@ import {
   toProgrammeProposal,
   type SpaceProgramme
 } from './programme';
-import { describeLayout, synthesizeLayout, toLayoutProposal, type LayoutPlan } from './layout';
+import {
+  describeLayout,
+  LAYOUT_PLAN_KIND,
+  synthesizeLayout,
+  toLayoutProposal,
+  type LayoutPlan
+} from './layout';
+import {
+  describeGeometry,
+  expectedInstances,
+  gateGeometryGraph,
+  synthesizeGeometry,
+  toGeometryProposal,
+  type GeometryGraph
+} from './geometry';
 import { PLANNING_STAGES } from './planning/planning-stage';
 import {
   type ApprovedArtefact,
@@ -173,6 +188,8 @@ export interface ArchitecturalResponse {
   readonly programme?: SpaceProgramme;
   /** Present when the turn produced a Layout Plan (Sprint 28.0). Carried by `proposal` too. */
   readonly layout?: LayoutPlan;
+  /** Present when the turn produced a Geometry Graph (Sprint 28.1a). Carried by `proposal` too. */
+  readonly geometry?: GeometryGraph;
 }
 
 export class ArchitecturalIntelligenceService {
@@ -227,14 +244,22 @@ export class ArchitecturalIntelligenceService {
 
     const approvedBrief = this.approvedBrief();
     const approvedProgramme = this.approvedProgramme();
+    const approvedLayout = this.approvedLayout();
     const classification = classifyRequest(utterance, {
       hasApprovedBrief: approvedBrief !== undefined,
-      hasApprovedProgramme: approvedProgramme !== undefined
+      hasApprovedProgramme: approvedProgramme !== undefined,
+      hasApprovedLayout: approvedLayout !== undefined
     });
     const intent = recognizeIntent(utterance);
 
     if (classification.lane === REQUEST_LANES.DirectExecution) {
       return { ...this.interpretIntent(intent), classification };
+    }
+
+    if (classification.lane === REQUEST_LANES.GeometryGeneration) {
+      return approvedLayout === undefined
+        ? { intent, message: NO_APPROVED_LAYOUT, classification }
+        : { ...this.generateGeometry(approvedLayout, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.LayoutGeneration) {
@@ -299,6 +324,49 @@ export class ArchitecturalIntelligenceService {
   approvedProgramme(): SpaceProgramme | undefined {
     const artefact = this.artefacts?.current(SPACE_PROGRAMME_KIND);
     return isArtefactValue(artefact) ? (artefact.value as SpaceProgramme) : undefined;
+  }
+
+  /**
+   * The Layout Plan this project has approved, if any (Sprint 28.1a).
+   */
+  approvedLayout(): LayoutPlan | undefined {
+    const artefact = this.artefacts?.current(LAYOUT_PLAN_KIND);
+    return isArtefactValue(artefact) ? (artefact.value as LayoutPlan) : undefined;
+  }
+
+  /**
+   * Builds and offers the Geometry Graph for an approved Layout (Sprint 28.1a).
+   *
+   * Order matters here and is the sprint's own rule: synthesise, **enrich**,
+   * **then gate**. A stage provider that breaks an invariant is caught by the
+   * same check as a broken packer, and neither reaches the user.
+   */
+  generateGeometry(
+    layout: LayoutPlan,
+    intent: ArchitecturalIntent = recognizeIntent('')
+  ): ArchitecturalResponse {
+    const synthesized = synthesizeGeometry({ layout });
+    if (!synthesized.ok) {
+      return { intent, message: synthesized.message };
+    }
+
+    const geometry = this.planner.enrich(
+      PLANNING_STAGES.Geometry,
+      synthesized.graph,
+      this.knowledge
+    );
+
+    const gate = gateGeometryGraph(geometry, layout);
+    if (!gate.ok) {
+      return { intent, message: gate.message };
+    }
+
+    return {
+      intent,
+      message: describeGeometry(geometry),
+      proposal: toGeometryProposal(geometry, { expected: expectedInstances(layout) }),
+      geometry
+    };
   }
 
   /**
@@ -450,6 +518,10 @@ const NO_APPROVED_BRIEF =
 /** What a layout request gets when no Programme has been approved (Sprint 28.0). */
 const NO_APPROVED_PROGRAMME =
   'There is no approved space programme yet, so there is nothing to arrange. Approve a programme first and I will lay it out.';
+
+/** What a geometry request gets when no Layout has been approved (Sprint 28.1a). */
+const NO_APPROVED_LAYOUT =
+  'There is no approved layout yet, so there is nothing to realise. Approve a layout first and I will draw the rooms.';
 
 /** Whether a stored artefact really carries a document-shaped value. */
 function isArtefactValue(

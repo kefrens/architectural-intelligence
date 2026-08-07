@@ -63,7 +63,16 @@ export const REQUEST_LANES = {
    * for every caller that has not opted in, including every Sprint 27.8 and
    * 27.9 test.
    */
-  LayoutGeneration: 'layout-generation'
+  LayoutGeneration: 'layout-generation',
+  /**
+   * The project has an approved Layout Plan and the user is asking for the
+   * geometry that follows from it (Sprint 28.1a).
+   *
+   * Guarded like the two lanes above it, by
+   * {@link ClassifyRequestOptions.hasApprovedLayout}, so it is unreachable for
+   * every caller that has not opted in.
+   */
+  GeometryGeneration: 'geometry-generation'
 } as const;
 
 export type RequestLane = (typeof REQUEST_LANES)[keyof typeof REQUEST_LANES];
@@ -120,6 +129,11 @@ export interface ClassifyRequestOptions {
    * Defaults to `false`.
    */
   readonly hasApprovedProgramme?: boolean;
+  /**
+   * Whether this project has an approved Layout Plan (Sprint 28.1a).
+   * Defaults to `false`.
+   */
+  readonly hasApprovedLayout?: boolean;
 }
 
 /**
@@ -132,6 +146,16 @@ export interface ClassifyRequestOptions {
  */
 const PROGRAMME_WORDS =
   /\b(space\s+programme|space\s+program|programme|program|room\s+schedule|schedule\s+of\s+accommodation|room\s+list|the\s+spaces)\b/i;
+
+/**
+ * Words that ask for geometry rather than for the arrangement.
+ *
+ * Checked before the layout words, for the same reason those are checked before
+ * the programme words: a project that already has an approved layout and asks to
+ * "draw the rooms" wants the next stage, not the one it has.
+ */
+const GEOMETRY_WORDS =
+  /\b(geometry|geometric|room\s+shapes?|shapes?|polygons?|draw(?:\s+the)?\s+(?:rooms?|plan)|realise|realize|dimensions?|sizes?)\b/i;
 
 /**
  * Words that ask for the layout rather than for the programme.
@@ -158,6 +182,19 @@ export function classifyRequest(
   // Platform can answer it today, which is the definition of Direct Execution.
   if (recognizeIntent(trimmed).kind === ARCHITECTURAL_INTENT_KINDS.Question) {
     return direct('This is a question about the existing project.');
+  }
+
+  // The geometry lane (Sprint 28.1a), checked before the layout lane.
+  if (options.hasApprovedLayout === true && GEOMETRY_WORDS.test(trimmed)) {
+    if (PROGRAMME_VERBS.test(trimmed) || /\bdraw|realise|realize\b/i.test(trimmed)) {
+      return {
+        lane: REQUEST_LANES.GeometryGeneration,
+        reason: 'This asks for geometry, and a layout plan has been approved.',
+        signals: ['approved layout'],
+        missing: []
+      };
+    }
+    return direct('This mentions geometry but asks for nothing to be produced.');
   }
 
   // The layout lane (Sprint 28.0), checked before the programme lane: a project

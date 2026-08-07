@@ -112,20 +112,36 @@ describe('architectural-intelligence reasons but never executes', () => {
   /**
    * ADR-0027.1 Rule 3 — one responsibility per artefact.
    *
-   * The Architectural Brief owns intent, and the Geometry Plan owns geometry.
-   * The only thing that keeps them apart three sprints from now is that a Brief
-   * *cannot* carry a `CommandRequest`, which is a property of what
-   * `brief/architectural-brief.ts` is allowed to import rather than of anyone's
-   * discipline. `brief-proposal.ts` is the deliberate exception: it is the
-   * bridge to the AI Workspace's `Proposal`, not part of the artefact.
+   * The Brief owns intent, the Programme owns the logical building, the Layout
+   * owns the arrangement, and the Geometry Plan owns geometry. What keeps them
+   * apart is not anyone's discipline: an upstream artefact *cannot* carry a
+   * `CommandRequest` or reach `@archisimple/geometry`, because of what these
+   * modules are allowed to import.
+   *
+   * The `*-proposal.ts` files are the deliberate exceptions — each is the bridge
+   * to the AI Workspace's `Proposal`, not part of the artefact it wraps.
+   *
+   * `@archisimple/skills` is permitted and load-bearing: the Programme's areas
+   * and the Layout's arrangement are computed there (Rule 9), and skills reach
+   * neither the Automation API nor the document, so the seam holds.
+   *
+   * `geometry/` is **not** in this list, and has its own inverted rule below —
+   * that stage is where coordinates legitimately begin. Leaving it merely
+   * unlisted would have meant the one module whose boundary matters most was
+   * asserted by nothing.
    */
-  describe('the Brief owns no geometry (ADR-0027.1 Rule 3)', () => {
+  describe('planning artefacts own no geometry (ADR-0027.1 Rule 3)', () => {
+    const ARTEFACT_DIRECTORIES = ['brief/', 'programme/', 'layout/'];
     const artefactSources = sources.filter(
-      (file) => file.path.startsWith('brief/') && file.path !== 'brief/brief-proposal.ts'
+      (file) =>
+        ARTEFACT_DIRECTORIES.some((directory) => file.path.startsWith(directory)) &&
+        !file.path.endsWith('-proposal.ts')
     );
 
-    it('finds the brief sources', () => {
-      expect(artefactSources.length).toBeGreaterThan(0);
+    it('covers every artefact module', () => {
+      for (const directory of ARTEFACT_DIRECTORIES) {
+        expect(artefactSources.some((file) => file.path.startsWith(directory))).toBe(true);
+      }
     });
 
     it.each(artefactSources.map((file) => file.path))(
@@ -140,6 +156,72 @@ describe('architectural-intelligence reasons but never executes', () => {
         expect(code(file.source)).not.toMatch(/\bCommandRequest\b/);
       }
     );
+
+    it.each(artefactSources.map((file) => file.path))(
+      '%s names no coordinate vocabulary',
+      (path) => {
+        const file = artefactSources.find((candidate) => candidate.path === path)!;
+
+        // An artefact that grew an x/y pair would have become geometry without
+        // anyone deciding to let it.
+        expect(code(file.source)).not.toMatch(/\bPoint2D\b|\bPoint3D\b/);
+        expect(code(file.source)).not.toMatch(/\breadonly\s+(x|y)\s*:/);
+      }
+    );
+  });
+
+  /**
+   * ADR-0027.1 Rule 3, from the other side (Sprint 28.1a).
+   *
+   * The Geometry Graph is the stage where coordinates legitimately begin, so the
+   * rule its neighbours live under is exactly inverted here: `Point2D` and
+   * `@archisimple/geometry` are **permitted**, because that is the whole point
+   * of the stage.
+   *
+   * What stays forbidden is the stage *below* it. A `CommandRequest` or an
+   * `automation-api` import would mean the Geometry Graph had quietly become the
+   * Geometry Plan — walls with thickness and the Requests that build them — one
+   * sprint early and without anyone deciding to.
+   *
+   * A test that asserts the opposite of its neighbours is right here: the rule
+   * was never "no geometry anywhere", it is "geometry starts precisely here".
+   */
+  describe('the Geometry Graph owns coordinates but not execution (Rule 3)', () => {
+    const geometrySources = sources.filter(
+      (file) => file.path.startsWith('geometry/') && !file.path.endsWith('-proposal.ts')
+    );
+
+    it('finds the geometry sources', () => {
+      expect(geometrySources.length).toBeGreaterThan(0);
+    });
+
+    it.each(geometrySources.map((file) => file.path))(
+      '%s reaches no execution boundary',
+      (path) => {
+        const file = geometrySources.find((candidate) => candidate.path === path)!;
+
+        for (const specifier of importsOf(file.source)) {
+          expect(specifier).not.toBe('@archisimple/automation-api');
+          expect(specifier).not.toBe('@archisimple/core');
+        }
+        expect(code(file.source)).not.toMatch(/\bCommandRequest\b/);
+      }
+    );
+
+    it('carries no wall thickness — that belongs to the Geometry Plan', () => {
+      for (const file of geometrySources) {
+        expect(code(file.source)).not.toMatch(/\bthickness\b/);
+      }
+    });
+
+    it('reaches geometry through skills rather than importing it directly', () => {
+      // `@archisimple/geometry` is permitted by the layering, but every
+      // computation this stage needs already has a home in skills (Rule 9), and
+      // a direct import would be the first step towards a second one.
+      for (const file of geometrySources) {
+        expect(importsOf(file.source)).not.toContain('@archisimple/geometry');
+      }
+    });
   });
 
   it('declares no runtime dependency outside its permitted layer', () => {

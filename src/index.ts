@@ -128,6 +128,37 @@ export {
 } from './programme';
 
 export {
+  circulationNodeId,
+  computeLayoutQuality,
+  createLayoutPlan,
+  describeLayout,
+  describeLayoutQuality,
+  isLayoutPlanComplete,
+  LAYOUT_EDGE_KINDS,
+  LAYOUT_NODE_KINDS,
+  LAYOUT_PLAN_KIND,
+  matchesProgramme,
+  reviseLayoutPlan,
+  storeyName,
+  summarizeLayoutPlan,
+  synthesizeLayout,
+  toLayoutProposal,
+  type CirculationStrategy,
+  type LayoutEdge,
+  type LayoutEdgeKind,
+  type LayoutNode,
+  type LayoutNodeKind,
+  type LayoutPlan,
+  type LayoutQuality,
+  type LayoutSpace,
+  type LayoutSynthesisResult,
+  type PlanningGraph,
+  type ProgrammeProvenance,
+  type ResolvedAdjacency,
+  type SynthesizeLayoutOptions
+} from './layout';
+
+export {
   createInMemoryPlanningArtefactReader,
   type ApprovedArtefact,
   type PlanningArtefactReader

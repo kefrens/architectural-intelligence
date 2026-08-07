@@ -59,7 +59,8 @@
  *   |-- direct-execution      -> interpretIntent, exactly as before this sprint
  *   |-- brief-generation      -> an Architectural Brief, offered for approval
  *   |-- clarification-required-> one focused question, draft kept for next turn
- *   `-- programme-generation  -> a Space Programme from the approved Brief (27.9)
+ *   |-- programme-generation  -> a Space Programme from the approved Brief (27.9)
+ *   `-- layout-generation     -> a Layout Plan from the approved Programme (28.0)
  * ```
  *
  * `interpretIntent` is deliberately *not* classified. It is the entry point a
@@ -103,10 +104,12 @@ import {
 } from './planning';
 import {
   describeProgramme,
+  SPACE_PROGRAMME_KIND,
   synthesizeProgramme,
   toProgrammeProposal,
   type SpaceProgramme
 } from './programme';
+import { describeLayout, synthesizeLayout, toLayoutProposal, type LayoutPlan } from './layout';
 import { PLANNING_STAGES } from './planning/planning-stage';
 import {
   type ApprovedArtefact,
@@ -168,6 +171,8 @@ export interface ArchitecturalResponse {
   readonly clarification?: ClarificationDialogue;
   /** Present when the turn produced a Space Programme (Sprint 27.9). Carried by `proposal` too. */
   readonly programme?: SpaceProgramme;
+  /** Present when the turn produced a Layout Plan (Sprint 28.0). Carried by `proposal` too. */
+  readonly layout?: LayoutPlan;
 }
 
 export class ArchitecturalIntelligenceService {
@@ -221,13 +226,23 @@ export class ArchitecturalIntelligenceService {
     }
 
     const approvedBrief = this.approvedBrief();
+    const approvedProgramme = this.approvedProgramme();
     const classification = classifyRequest(utterance, {
-      hasApprovedBrief: approvedBrief !== undefined
+      hasApprovedBrief: approvedBrief !== undefined,
+      hasApprovedProgramme: approvedProgramme !== undefined
     });
     const intent = recognizeIntent(utterance);
 
     if (classification.lane === REQUEST_LANES.DirectExecution) {
       return { ...this.interpretIntent(intent), classification };
+    }
+
+    if (classification.lane === REQUEST_LANES.LayoutGeneration) {
+      // Reachable only when the reader answered, so `approvedProgramme` is
+      // present here by construction; the guard is for the type.
+      return approvedProgramme === undefined
+        ? { intent, message: NO_APPROVED_PROGRAMME, classification }
+        : { ...this.generateLayout(approvedProgramme, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.ProgrammeGeneration) {
@@ -271,7 +286,46 @@ export class ArchitecturalIntelligenceService {
    */
   approvedBrief(): ArchitecturalBrief | undefined {
     const artefact = this.artefacts?.current(ARCHITECTURAL_BRIEF_KIND);
-    return isBriefValue(artefact) ? (artefact.value as ArchitecturalBrief) : undefined;
+    return isArtefactValue(artefact) ? (artefact.value as ArchitecturalBrief) : undefined;
+  }
+
+  /**
+   * The Space Programme this project has approved, if any (Sprint 28.0).
+   *
+   * Narrowed the same way {@link approvedBrief} is: the reader answers with an
+   * opaque `value`, because the layer that stores artefacts is not the layer
+   * that knows their shapes.
+   */
+  approvedProgramme(): SpaceProgramme | undefined {
+    const artefact = this.artefacts?.current(SPACE_PROGRAMME_KIND);
+    return isArtefactValue(artefact) ? (artefact.value as SpaceProgramme) : undefined;
+  }
+
+  /**
+   * Builds and offers the Layout Plan for an approved Programme (Sprint 28.0).
+   *
+   * Public for the same reason {@link generateProgramme} is: the tool path calls
+   * it directly, and so would a menu command.
+   */
+  generateLayout(
+    programme: SpaceProgramme,
+    intent: ArchitecturalIntent = recognizeIntent('')
+  ): ArchitecturalResponse {
+    const synthesized = synthesizeLayout({ programme });
+    if (!synthesized.ok) {
+      return { intent, message: synthesized.message };
+    }
+
+    // Rule 10: providers enrich before the artefact is offered, never after it
+    // is approved. A layout the user approved is the layout the user saw.
+    const layout = this.planner.enrich(PLANNING_STAGES.Layout, synthesized.plan, this.knowledge);
+
+    return {
+      intent,
+      message: describeLayout(layout),
+      proposal: toLayoutProposal(layout),
+      layout
+    };
   }
 
   /**
@@ -393,8 +447,12 @@ export class ArchitecturalIntelligenceService {
 const NO_APPROVED_BRIEF =
   'There is no approved brief yet, so there is nothing to write a programme from. Tell me what you want to build and I will start one.';
 
-/** Whether a stored artefact really carries a Brief-shaped value. */
-function isBriefValue(
+/** What a layout request gets when no Programme has been approved (Sprint 28.0). */
+const NO_APPROVED_PROGRAMME =
+  'There is no approved space programme yet, so there is nothing to arrange. Approve a programme first and I will lay it out.';
+
+/** Whether a stored artefact really carries a document-shaped value. */
+function isArtefactValue(
   artefact: ApprovedArtefact | undefined
 ): artefact is ApprovedArtefact & { readonly value: object } {
   return artefact !== undefined && typeof artefact.value === 'object' && artefact.value !== null;

@@ -53,7 +53,17 @@ export const REQUEST_LANES = {
    * no brief behind it is not a programme request, it is a question about a
    * project, and it stays in the direct lane where it has always been.
    */
-  ProgrammeGeneration: 'programme-generation'
+  ProgrammeGeneration: 'programme-generation',
+  /**
+   * The project has an approved Programme and the user is asking for the layout
+   * that follows from it (Sprint 28.0).
+   *
+   * Guarded the same way the programme lane is, by
+   * {@link ClassifyRequestOptions.hasApprovedProgramme} — so it is unreachable
+   * for every caller that has not opted in, including every Sprint 27.8 and
+   * 27.9 test.
+   */
+  LayoutGeneration: 'layout-generation'
 } as const;
 
 export type RequestLane = (typeof REQUEST_LANES)[keyof typeof REQUEST_LANES];
@@ -105,6 +115,11 @@ export interface ClassifyRequestOptions {
    * every one of its tests.
    */
   readonly hasApprovedBrief?: boolean;
+  /**
+   * Whether this project has an approved Space Programme (Sprint 28.0).
+   * Defaults to `false`.
+   */
+  readonly hasApprovedProgramme?: boolean;
 }
 
 /**
@@ -117,6 +132,16 @@ export interface ClassifyRequestOptions {
  */
 const PROGRAMME_WORDS =
   /\b(space\s+programme|space\s+program|programme|program|room\s+schedule|schedule\s+of\s+accommodation|room\s+list|the\s+spaces)\b/i;
+
+/**
+ * Words that ask for the layout rather than for the programme.
+ *
+ * Checked before the programme words, because "arrange the spaces" names both
+ * and means the later stage — a project that already has an approved Programme
+ * is not asking for another one.
+ */
+const LAYOUT_WORDS =
+  /\b(layout|lay\s?out|plan\s+the\s+spaces|arrangement|arrange|floor\s+plan|floorplan|organise|organize|zoning|circulation)\b/i;
 
 /** Verbs that ask for something to be produced from what already exists. */
 const PROGRAMME_VERBS =
@@ -133,6 +158,21 @@ export function classifyRequest(
   // Platform can answer it today, which is the definition of Direct Execution.
   if (recognizeIntent(trimmed).kind === ARCHITECTURAL_INTENT_KINDS.Question) {
     return direct('This is a question about the existing project.');
+  }
+
+  // The layout lane (Sprint 28.0), checked before the programme lane: a project
+  // with an approved programme that asks to "arrange the spaces" wants the next
+  // stage, not the one it already has.
+  if (options.hasApprovedProgramme === true && LAYOUT_WORDS.test(trimmed)) {
+    if (PROGRAMME_VERBS.test(trimmed) || /\barrange|organise|organize\b/i.test(trimmed)) {
+      return {
+        lane: REQUEST_LANES.LayoutGeneration,
+        reason: 'This asks for the layout, and a space programme has been approved.',
+        signals: ['approved programme'],
+        missing: []
+      };
+    }
+    return direct('This mentions the layout but asks for nothing to be produced.');
   }
 
   // The programme lane (Sprint 27.9), checked before the dwelling test because

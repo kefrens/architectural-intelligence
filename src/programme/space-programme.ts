@@ -149,6 +149,20 @@ export interface SpaceProgramme {
   readonly revision: number;
   readonly createdAt: number;
   readonly sourceBrief: BriefProvenance;
+  /**
+   * How many storeys the building has (Sprint 28.0's 27.9 amendment).
+   *
+   * Carried from the Brief's mandatory `storeys` topic. It lives here rather
+   * than being read from the Brief later because the artefact reader answers
+   * `current(kind)` only: a consumer reading the Brief directly would get
+   * whichever revision is in force *now*, while this programme was derived from
+   * `sourceBrief.briefRevision` — silently mixing two revisions, which is the
+   * divergence ADR-0027.1 Rule 12 says must be reported rather than reconciled.
+   *
+   * Always at least 1. It is a count, not a layout: *which* spaces sit on
+   * *which* storey is the Layout Plan's decision (Sprint 28.0).
+   */
+  readonly storeys: number;
   /** Carried through from the Brief, so the programme can be read on its own. */
   readonly objectives: readonly string[];
   readonly spaces: readonly ProgrammeSpace[];
@@ -163,6 +177,8 @@ export interface SpaceProgramme {
 
 export function createProgramme(input: {
   readonly sourceBrief: BriefProvenance;
+  /** Defaults to 1 — a programme that says nothing about storeys is single-storey. */
+  readonly storeys?: number;
   readonly objectives?: readonly string[];
   readonly spaces: readonly ProgrammeSpace[];
   readonly adjacencies?: readonly IntendedAdjacency[];
@@ -177,6 +193,7 @@ export function createProgramme(input: {
     revision: 1,
     createdAt: input.now ?? Date.now(),
     sourceBrief: input.sourceBrief,
+    storeys: Math.max(1, Math.floor(input.storeys ?? 1)),
     objectives: input.objectives ?? [],
     spaces: input.spaces,
     adjacencies: input.adjacencies ?? [],

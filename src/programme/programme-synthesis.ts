@@ -63,6 +63,36 @@ const IMPLIED_SPACES: readonly DesiredSpace[] = [
   { name: 'hallway', count: 1 }
 ];
 
+/**
+ * Vertical circulation, implied when the brief asks for more than one storey
+ * (Sprint 28.0's 27.9 amendment).
+ *
+ * A two-storey programme with no staircase is not a two-storey building, and
+ * before this the platform produced exactly that: `IMPLIED_SPACES` covered the
+ * ground floor and nothing connected the floors. The Layout Plan's
+ * `vertical-connection` edge would then have had nothing to occupy it.
+ *
+ * One staircase, and one landing per floor above the ground. Both `expected`,
+ * like every other implied space, so they are visible in the review and a user
+ * who wants neither can say so. *Which* spaces exist stays a Programme
+ * decision; where they go is the Layout's.
+ */
+function verticalCirculationFor(storeys: number): readonly DesiredSpace[] {
+  if (storeys <= 1) {
+    return [];
+  }
+  return [
+    { name: 'staircase', count: 1 },
+    { name: 'landing', count: storeys - 1 }
+  ];
+}
+
+/** The storey count the brief stated. Mandatory there, so it is essentially always present. */
+function statedStoreys(brief: ArchitecturalBrief): number {
+  const value = briefRequirement(brief, BRIEF_TOPICS.Storeys)?.value;
+  return typeof value === 'number' && value >= 1 ? Math.floor(value) : 1;
+}
+
 /** Which zone a space belongs to. Unknown names fall to `day`, the least surprising default. */
 const ZONE_BY_SPACE: readonly (readonly [RegExp, FunctionalZone])[] = [
   [/bed\s?room|bedroom/i, FUNCTIONAL_ZONES.Night],
@@ -120,13 +150,16 @@ const TOPIC_BY_SPACE: Readonly<Record<string, string>> = {
  * A brief that already names a kitchen does not get a second one — implied
  * spaces fill gaps, they never duplicate.
  */
-function spacesFrom(brief: ArchitecturalBrief): readonly (DesiredSpace & { implied: boolean })[] {
+function spacesFrom(
+  brief: ArchitecturalBrief,
+  storeys: number
+): readonly (DesiredSpace & { implied: boolean })[] {
   const named = brief.desiredSpaces.map((space) => ({ ...space, implied: false }));
   const have = new Set(named.map((space) => space.name.toLowerCase()));
 
-  const implied = IMPLIED_SPACES.filter((space) => !have.has(space.name.toLowerCase())).map(
-    (space) => ({ ...space, implied: true })
-  );
+  const implied = [...IMPLIED_SPACES, ...verticalCirculationFor(storeys)]
+    .filter((space) => !have.has(space.name.toLowerCase()))
+    .map((space) => ({ ...space, implied: true }));
 
   return [...named, ...implied];
 }
@@ -235,7 +268,8 @@ export function synthesizeProgramme(options: SynthesizeProgrammeOptions): Progra
   const { brief } = options;
   const context = options.context ?? createSkillContext();
 
-  const demands = spacesFrom(brief);
+  const storeys = statedStoreys(brief);
+  const demands = spacesFrom(brief, storeys);
   if (demands.length === 0) {
     return {
       ok: false,
@@ -299,6 +333,12 @@ export function synthesizeProgramme(options: SynthesizeProgrammeOptions): Progra
     );
   }
 
+  if (storeys > 1) {
+    assumptions.push(
+      `The brief asks for ${storeys} storeys, so the programme includes vertical circulation.`
+    );
+  }
+
   if (allocated.value.unrecognisedSpaces.length > 0) {
     warnings.push(
       `I had no typical size for ${allocated.value.unrecognisedSpaces.join(', ')}, so I used a general one.`
@@ -316,6 +356,7 @@ export function synthesizeProgramme(options: SynthesizeProgrammeOptions): Progra
     ok: true,
     programme: createProgramme({
       sourceBrief: { briefId: brief.id, briefRevision: brief.revision },
+      storeys,
       objectives: brief.objectives,
       spaces,
       adjacencies,

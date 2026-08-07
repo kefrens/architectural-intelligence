@@ -31,6 +31,7 @@
  */
 
 import { createUuid } from '@archisimple/shared';
+import type { EnrichedArtefact } from '../artefacts/enriched-artefact';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
 export const SPACE_PROGRAMME_KIND = 'space-programme';
@@ -143,7 +144,7 @@ export interface BriefProvenance {
   readonly briefRevision: number;
 }
 
-export interface SpaceProgramme {
+export interface SpaceProgramme extends EnrichedArtefact {
   readonly kind: typeof SPACE_PROGRAMME_KIND;
   readonly id: string;
   readonly revision: number;

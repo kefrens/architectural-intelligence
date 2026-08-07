@@ -36,6 +36,7 @@
  */
 
 import { createUuid, type Point2D } from '@archisimple/shared';
+import type { EnrichedArtefact } from '../artefacts/enriched-artefact';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
 export const GEOMETRY_GRAPH_KIND = 'geometry-graph';
@@ -109,7 +110,7 @@ export interface GeometryAdjacency {
   readonly reason: string;
 }
 
-export interface GeometryGraph {
+export interface GeometryGraph extends EnrichedArtefact {
   readonly kind: typeof GEOMETRY_GRAPH_KIND;
   readonly id: string;
   readonly revision: number;

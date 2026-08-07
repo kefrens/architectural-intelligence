@@ -10,6 +10,7 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
+import { contributionNotes } from '../artefacts/enriched-artefact';
 import {
   isProgrammeComplete,
   SPACE_PROGRAMME_KIND,
@@ -39,7 +40,9 @@ export function toProgrammeProposal(programme: SpaceProgramme): Proposal {
     explanation: summarizeProgramme(programme),
     reasoning:
       'This turns the approved brief into the building itself — which spaces exist, how large each should be, and which belong together — while there is still nothing to redraw.',
-    assumptions: programme.assumptions,
+    // Sprint 28.3: what an installed extension added is named beside
+    // what the platform assumed, in the same list the user already reads.
+    assumptions: [...programme.assumptions, ...contributionNotes(programme)],
     warnings: programme.warnings,
     expectedOutcome: EXPECTED_OUTCOME
   });

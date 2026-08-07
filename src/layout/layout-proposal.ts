@@ -13,6 +13,7 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
+import { contributionNotes } from '../artefacts/enriched-artefact';
 import {
   isLayoutPlanComplete,
   LAYOUT_PLAN_KIND,
@@ -42,7 +43,9 @@ export function toLayoutProposal(plan: LayoutPlan): Proposal {
     explanation: `${summarizeLayoutPlan(plan)}\n\n**How well it fits the programme**\n${describeLayoutQuality(quality)}`,
     reasoning:
       'This arranges the approved programme — which floor each space is on, what ends up next to what, and how you get around — while there is still nothing to redraw.',
-    assumptions: plan.assumptions,
+    // Sprint 28.3: what an installed extension added is named beside
+    // what the platform assumed, in the same list the user already reads.
+    assumptions: [...plan.assumptions, ...contributionNotes(plan)],
     warnings: plan.warnings,
     expectedOutcome: EXPECTED_OUTCOME
   });

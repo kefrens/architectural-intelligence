@@ -101,7 +101,9 @@ import {
   createBuiltInOperationProviders,
   type ArchitecturalCapability,
   type ArchitecturalOperationProvider,
-  type PlanBlocker
+  type PlanBlocker,
+  type PlanningStageCapability,
+  type PlanningStageProvider
 } from './planning';
 import {
   describeProgramme,
@@ -224,6 +226,31 @@ export class ArchitecturalIntelligenceService {
   /** Registers an additional operation provider after construction. */
   registerOperationProvider(provider: ArchitecturalOperationProvider): void {
     this.planner.registerProvider(provider);
+  }
+
+  /**
+   * Registers a provider that enriches a planning artefact (Sprint 28.3,
+   * ADR-0027.1 Rule 10).
+   *
+   * The stage seam has existed on the planner since Sprint 27.9; this is the
+   * passthrough that makes it reachable from a host holding only the service,
+   * mirroring {@link registerOperationProvider} beside it. No second registry —
+   * the provider lands on the same planner, under the same duplicate-id rule.
+   *
+   * @throws when the provider id is already registered, stage or operation alike.
+   */
+  registerPlanningStageProvider(provider: PlanningStageProvider): void {
+    this.planner.registerStageProvider(provider);
+  }
+
+  /** Removes a provider of either kind. Returns whether one was registered. */
+  unregisterProvider(id: string): boolean {
+    return this.planner.unregisterProvider(id);
+  }
+
+  /** Every stage currently enriched, and by whom. */
+  stageCapabilities(): readonly PlanningStageCapability[] {
+    return this.planner.stageCapabilities();
   }
 
   /**

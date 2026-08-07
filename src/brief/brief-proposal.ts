@@ -17,6 +17,7 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
+import { contributionNotes } from '../artefacts/enriched-artefact';
 import {
   ARCHITECTURAL_BRIEF_KIND,
   isBriefComplete,
@@ -47,7 +48,9 @@ export function toBriefProposal(brief: ArchitecturalBrief): Proposal {
     explanation: summarizeBrief(brief),
     reasoning:
       'Before any geometry exists, this records what the building is for, so the design can be reviewed as intent rather than as walls.',
-    assumptions: brief.assumptions,
+    // Sprint 28.3: what an installed extension added is named beside
+    // what the platform assumed, in the same list the user already reads.
+    assumptions: [...brief.assumptions, ...contributionNotes(brief)],
     expectedOutcome: EXPECTED_OUTCOME
   });
 }

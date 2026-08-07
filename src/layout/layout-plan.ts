@@ -44,6 +44,7 @@
  */
 
 import { createUuid } from '@archisimple/shared';
+import type { EnrichedArtefact } from '../artefacts/enriched-artefact';
 import type { FunctionalZone, SpacePriority } from '../programme/space-programme';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
@@ -164,7 +165,7 @@ export interface CirculationStrategy {
   readonly description: string;
 }
 
-export interface LayoutPlan {
+export interface LayoutPlan extends EnrichedArtefact {
   readonly kind: typeof LAYOUT_PLAN_KIND;
   readonly id: string;
   readonly revision: number;

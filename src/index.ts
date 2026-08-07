@@ -189,6 +189,8 @@ export {
   type PlanningArtefactReader
 } from './artefacts/planning-artefact-reader';
 
+export { contributorsOf, wasEnriched, type EnrichedArtefact } from './artefacts/enriched-artefact';
+
 export { BULK_STEP_THRESHOLD, toProposal } from './proposal/proposal-builder';
 
 export {

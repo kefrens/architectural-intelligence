@@ -42,6 +42,7 @@
  */
 
 import { createUuid } from '@archisimple/shared';
+import type { EnrichedArtefact } from '../artefacts/enriched-artefact';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
 export const ARCHITECTURAL_BRIEF_KIND = 'architectural-brief';
@@ -109,7 +110,7 @@ export interface DesiredSpace {
   readonly count: number;
 }
 
-export interface ArchitecturalBrief {
+export interface ArchitecturalBrief extends EnrichedArtefact {
   readonly kind: typeof ARCHITECTURAL_BRIEF_KIND;
   /** Stable across revisions. */
   readonly id: string;

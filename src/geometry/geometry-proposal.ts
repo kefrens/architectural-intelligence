@@ -14,6 +14,7 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
+import { contributionNotes } from '../artefacts/enriched-artefact';
 import {
   GEOMETRY_GRAPH_KIND,
   isGeometryGraphComplete,
@@ -50,7 +51,9 @@ export function toGeometryProposal(
     explanation: `${summarizeGeometryGraph(graph)}\n\n${describeEvaluation(evaluation)}`,
     reasoning:
       'This turns the approved layout into rooms with real dimensions — still without walls, so the shapes can be judged before anything is built from them.',
-    assumptions: graph.assumptions,
+    // Sprint 28.3: what an installed extension added is named beside
+    // what the platform assumed, in the same list the user already reads.
+    assumptions: [...graph.assumptions, ...contributionNotes(graph)],
     warnings: graph.warnings,
     expectedOutcome: EXPECTED_OUTCOME
   });

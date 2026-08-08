@@ -1,19 +1,30 @@
 {
-  "extends": "../../tsconfig.base.json",
+  // Standalone since Sprint 30.3. This inlines what `tsconfig.base.json` gave
+  // the package inside the ArchiSimple workspace, and drops the project
+  // references that pointed at sibling directories — the platform now arrives
+  // as installed packages, by version.
+  //
+  // `NodeNext` for the reason Sprint 30.0 established: relative imports carry
+  // `.js` in source because the specifier names the emitted file, and Node's
+  // ESM resolver requires a real extension.
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     "composite": true,
     "rootDir": "src",
     "outDir": "dist",
     "types": ["node"]
   },
-  "references": [
-    { "path": "../shared" },
-    { "path": "../automation-api" },
-    { "path": "../ai-engine" },
-    { "path": "../building-model" },
-    { "path": "../spatial" },
-    { "path": "../inspector" },
-    { "path": "../skills" }
-  ],
   "include": ["src/**/*.ts"]
 }

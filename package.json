@@ -4,8 +4,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kefrens/archisimple.git",
-    "directory": "packages/architectural-intelligence"
+    "url": "git+https://github.com/kefrens/architectural-intelligence.git"
   },
   "type": "module",
   "main": "dist/index.js",
@@ -25,19 +24,36 @@
   "scripts": {
     "build": "tsc -b",
     "lint": "eslint .",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@archisimple/ai-engine": "workspace:*",
-    "@archisimple/automation-api": "workspace:*",
-    "@archisimple/building-model": "workspace:*",
-    "@archisimple/inspector": "workspace:*",
-    "@archisimple/shared": "workspace:*",
-    "@archisimple/skills": "workspace:*",
-    "@archisimple/spatial": "workspace:*"
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@archisimple/ai-engine": "^0.1.0",
+    "@archisimple/automation-api": "^0.1.0",
+    "@archisimple/building-model": "^0.1.0",
+    "@archisimple/inspector": "^0.1.0",
+    "@archisimple/shared": "^0.1.0",
+    "@archisimple/skills": "^0.1.0",
+    "@archisimple/spatial": "^0.1.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.3",
+    "eslint": "^10.3.0",
+    "prettier": "^3.8.3",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.59.2",
     "vitest": "^4.1.8"
+  },
+  "peerDependencies": {
+    "@archisimple/ai-engine": "^0.1.0",
+    "@archisimple/automation-api": "^0.1.0",
+    "@archisimple/building-model": "^0.1.0",
+    "@archisimple/inspector": "^0.1.0",
+    "@archisimple/shared": "^0.1.0",
+    "@archisimple/skills": "^0.1.0",
+    "@archisimple/spatial": "^0.1.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -207,6 +207,7 @@ export {
   classifyRequest,
   createBrief,
   createInMemoryBriefDraftStore,
+  createSessionBriefDraftStore,
   describeBrief,
   describeClarification,
   desiredSpacesFrom,
@@ -221,6 +222,7 @@ export {
   withRequirement,
   type ArchitecturalBrief,
   type AssembleBriefOptions,
+  type BoundBriefDraftStore,
   type BriefDraftStore,
   type BriefRequirement,
   type BriefRequirementSource,
@@ -244,3 +246,24 @@ export {
   createArchitecturalProviderAdapter,
   type CreateArchitecturalProviderAdapterOptions
 } from './provider/architectural-provider-adapter';
+
+/**
+ * The composition seam (Sprint 29.1, ADR-0029 Rule 2). One entry point through
+ * which a host receives this capability instead of constructing it by name.
+ */
+export {
+  contributionForIntelligence,
+  createArchitecturalIntelligenceContribution,
+  ARCHITECTURAL_INTELLIGENCE_CONTRIBUTION_ID,
+  type ArchitecturalIntelligenceContribution,
+  type ArchitecturalIntelligenceContributionOptions
+} from './contribution';
+
+/** The planning tools, for a host composing them without the contribution. */
+export {
+  captureBriefToolDefinition,
+  createArchitecturalToolDefinitions,
+  createGeometryToolDefinition,
+  createLayoutToolDefinition,
+  createProgrammeToolDefinition
+} from './tools';

@@ -15,8 +15,8 @@
  * which a model could suggest a coordinate, a room shape or a wall.
  */
 
-import type { ArchitecturalIntelligenceService } from '@archisimple/architectural-intelligence';
-import type { ResolvedToolCall, ToolDefinition } from './toolBroker';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
+import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
 
 export function createGeometryToolDefinition(
   intelligence: ArchitecturalIntelligenceService

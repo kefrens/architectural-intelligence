@@ -52,3 +52,9 @@ export {
 export { describeBrief, toBriefProposal } from './brief-proposal';
 
 export { createInMemoryBriefDraftStore, type BriefDraftStore } from './brief-draft-store';
+
+/** Sprint 29.1 (ADR-0029 Rule 2): the session-bound draft store, formerly in `apps/web`. */
+export {
+  createSessionBriefDraftStore,
+  type BoundBriefDraftStore
+} from './session-brief-draft-store';

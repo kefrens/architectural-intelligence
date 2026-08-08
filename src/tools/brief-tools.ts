@@ -37,8 +37,8 @@ import {
   describeClarification,
   toBriefProposal,
   type DesiredSpace
-} from '@archisimple/architectural-intelligence';
-import type { ResolvedToolCall, ToolDefinition } from './toolBroker';
+} from '../brief';
+import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
 
 /** The numeric topics the schema exposes as first-class arguments. */
 const COUNT_ARGUMENTS: readonly (readonly [string, string, string])[] = [

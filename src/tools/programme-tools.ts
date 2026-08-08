@@ -20,8 +20,8 @@
  * model answered. So it cannot, and the schema says so.
  */
 
-import type { ArchitecturalIntelligenceService } from '@archisimple/architectural-intelligence';
-import type { ResolvedToolCall, ToolDefinition } from './toolBroker';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
+import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
 
 export function createProgrammeToolDefinition(
   intelligence: ArchitecturalIntelligenceService

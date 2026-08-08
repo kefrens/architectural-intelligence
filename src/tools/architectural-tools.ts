@@ -43,11 +43,11 @@ import {
   ARCHITECTURAL_INTENT_KINDS,
   createIntent,
   INTENT_TARGET_KINDS,
-  type ArchitecturalIntelligenceService,
   type ArchitecturalIntent,
   type IntentTarget
-} from '@archisimple/architectural-intelligence';
-import type { ResolvedToolCall, ToolDefinition, ToolFunctionSchema } from './toolBroker';
+} from '../intent';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
+import type { ResolvedToolCall, ToolDefinition, ToolFunctionSchema } from '@archisimple/ai-engine';
 
 /** Every Automation type the four operations below can plan. */
 const MOVE_REQUIRES = ['automation.moveEntity'] as const;

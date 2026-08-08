@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# This repository stands alone (Sprint 30.3, ADR-0030 Rule 4). It consumes the
+# ArchiSimple platform by **version, from npm** — never a workspace link, never a
+# sibling checkout. A clean clone here builds with nothing else present, and this
+# workflow is what proves that on every push.
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      # ADR-0030 Rule 4, asserted rather than trusted: a `workspace:`, `file:`,
+      # git or relative dependency would make "standalone" a description of
+      # someone's laptop rather than a property of the repository.
+      - name: No local dependencies
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const all = { ...p.dependencies, ...p.peerDependencies, ...p.devDependencies };
+            const bad = Object.entries(all).filter(([, v]) =>
+              /^(workspace:|file:|link:|git\+|\.\.?\/)/.test(v));
+            if (bad.length) {
+              console.error('Local dependencies found:', bad);
+              process.exit(1);
+            }
+            console.log('All ' + Object.keys(all).length + ' dependencies resolve from a registry.');
+          "

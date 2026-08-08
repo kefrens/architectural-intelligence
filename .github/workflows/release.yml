@@ -1,0 +1,122 @@
+name: Release
+
+# Publication is a deliberate act, never a side effect of merging (ADR-0029
+# Rule 1). Manual dispatch only, and it will not publish unless `confirm` is
+# typed out in full.
+#
+# **Release order matters here** (ADR-0030 Rule 8): the platform releases first,
+# and this repository consumes a released version. Publishing an intelligence
+# that depends on a platform version nobody can install fails at a consumer's
+# `npm install`, not in this workflow — which is why the install step below is a
+# real gate rather than a formality.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.1.1. Must already be set in package.json.'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "publish" to push to npm. Anything else is a dry run.'
+        required: true
+        default: 'dry-run'
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # npm provenance: the registry records which workflow run produced the
+      # tarball, so a consumer can verify it came from this repository.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Check the version matches the requested one
+        run: |
+          ACTUAL=$(node -p "require('./package.json').version")
+          if [ "$ACTUAL" != "${{ inputs.version }}" ]; then
+            echo "::error::package.json is at $ACTUAL, not ${{ inputs.version }}. Bump and commit first."
+            exit 1
+          fi
+          echo "Version $ACTUAL confirmed."
+
+      - name: Refuse to republish an existing version
+        run: |
+          if npm view "@archisimple/architectural-intelligence@${{ inputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::${{ inputs.version }} is already published. Bump the version."
+            exit 1
+          fi
+          echo "${{ inputs.version }} is not published yet."
+
+      - name: Pack
+        run: npm pack --pack-destination dist-release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: architectural-intelligence-${{ inputs.version }}
+          path: dist-release/*.tgz
+          if-no-files-found: error
+
+      # Everything above is safe to run at any time. Everything below cannot be
+      # undone: npm restricts unpublishing, and a consumer may already have it.
+      - name: Dry run
+        if: inputs.confirm != 'publish'
+        run: echo "::notice::Dry run only. Re-dispatch with confirm=publish to release."
+
+      - name: Publish to npm
+        if: inputs.confirm == 'publish'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+        run: npm publish --access public
+
+      # "Published" and "installable" are different claims — and npm's write and
+      # read paths are different systems, so a package can 404 for minutes after
+      # a successful publish. Poll rather than assume (the lesson from
+      # archisimple Sprint 30.2).
+      - name: Verify the published release
+        if: inputs.confirm == 'publish'
+        run: |
+          PKG="@archisimple/architectural-intelligence@${{ inputs.version }}"
+          for i in $(seq 1 30); do
+            if npm view "$PKG" version >/dev/null 2>&1; then
+              echo "$PKG is readable."
+              break
+            fi
+            echo "waiting for $PKG to propagate ($i/30) …"
+            sleep 10
+          done
+          mkdir -p /tmp/verify && cd /tmp/verify && npm init -y >/dev/null
+          npm pkg set type=module >/dev/null
+          npm install "$PKG" --no-audit --no-fund
+          node -e "
+            import('@archisimple/architectural-intelligence').then((m) => {
+              const missing = ['createArchitecturalIntelligenceContribution', 'synthesizeProgramme']
+                .filter((name) => typeof m[name] !== 'function');
+              if (missing.length) {
+                console.error('Published package is missing:', missing);
+                process.exit(1);
+              }
+              console.log('Published package installs from npm and exposes its surface.');
+            });
+          "

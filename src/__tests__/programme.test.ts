@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
-import { createInMemoryPlanningArtefactReader } from '../artefacts/planning-artefact-reader';
+import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
+import { createInMemoryPlanningArtefactReader } from '../artefacts/planning-artefact-reader.js';
 import {
   ARCHITECTURAL_BRIEF_KIND,
   assembleBrief,
@@ -20,8 +20,12 @@ import {
   createInMemoryBriefDraftStore,
   REQUEST_LANES,
   type ArchitecturalBrief
-} from '../brief';
-import { ArchitecturalPlanner, PLANNING_STAGES, type PlanningStageProvider } from '../planning';
+} from '../brief/index.js';
+import {
+  ArchitecturalPlanner,
+  PLANNING_STAGES,
+  type PlanningStageProvider
+} from '../planning/index.js';
 import {
   ADJACENCY_STRENGTHS,
   AREA_SOURCES,
@@ -32,8 +36,8 @@ import {
   synthesizeProgramme,
   toProgrammeProposal,
   type SpaceProgramme
-} from '../programme';
-import { createHarness } from './harness';
+} from '../programme/index.js';
+import { createHarness } from './harness.js';
 
 const REQUEST = 'Design a two-storey family home with 3 bedrooms and 2 bathrooms';
 const REQUEST_WITH_TOTAL = 'Design a 100 m² two-storey family home with 3 bedrooms and 2 bathrooms';

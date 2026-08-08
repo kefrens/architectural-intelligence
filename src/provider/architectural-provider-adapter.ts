@@ -40,7 +40,7 @@ import type {
   AiProviderRequest,
   AiProviderResponse
 } from '@archisimple/ai-engine';
-import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 
 export const ARCHITECTURAL_PROVIDER_ID = 'architectural';
 

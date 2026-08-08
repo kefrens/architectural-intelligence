@@ -36,7 +36,7 @@
  */
 
 import { createUuid, type Point2D } from '@archisimple/shared';
-import type { EnrichedArtefact } from '../artefacts/enriched-artefact';
+import type { EnrichedArtefact } from '../artefacts/enriched-artefact.js';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
 export const GEOMETRY_GRAPH_KIND = 'geometry-graph';

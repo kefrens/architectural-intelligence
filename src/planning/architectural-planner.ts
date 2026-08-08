@@ -21,18 +21,18 @@
 import {
   ARCHITECTURAL_INTENT_KINDS,
   type ArchitecturalIntent
-} from '../intent/architectural-intent';
-import type { BuildingKnowledge } from '../understanding/building-knowledge';
+} from '../intent/architectural-intent.js';
+import type { BuildingKnowledge } from '../understanding/building-knowledge.js';
 import type {
   ArchitecturalCapability,
   ArchitecturalOperationProvider
-} from './architectural-operation';
-import { blocked, PLAN_BLOCKER_REASONS, type PlanResult } from './architectural-plan';
+} from './architectural-operation.js';
+import { blocked, PLAN_BLOCKER_REASONS, type PlanResult } from './architectural-plan.js';
 import type {
   PlanningStage,
   PlanningStageCapability,
   PlanningStageProvider
-} from './planning-stage';
+} from './planning-stage.js';
 
 export class ArchitecturalPlanner {
   private readonly providers = new Map<string, ArchitecturalOperationProvider>();

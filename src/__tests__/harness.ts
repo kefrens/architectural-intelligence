@@ -43,7 +43,7 @@ import {
   createSpatialInspectorProvider,
   SpatialService
 } from '@archisimple/spatial';
-import { BuildingKnowledge } from '../understanding/building-knowledge';
+import { BuildingKnowledge } from '../understanding/building-knowledge.js';
 
 export const LEVEL_ID = 'level-1';
 

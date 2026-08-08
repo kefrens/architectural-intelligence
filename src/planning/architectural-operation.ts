@@ -23,9 +23,9 @@
  * convention.
  */
 
-import type { ArchitecturalIntent } from '../intent/architectural-intent';
-import type { BuildingKnowledge } from '../understanding/building-knowledge';
-import type { PlanResult } from './architectural-plan';
+import type { ArchitecturalIntent } from '../intent/architectural-intent.js';
+import type { BuildingKnowledge } from '../understanding/building-knowledge.js';
+import type { PlanResult } from './architectural-plan.js';
 
 export interface ArchitecturalOperationProvider {
   /** Unique among registered providers; duplicate registration is an error. */

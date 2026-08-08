@@ -13,14 +13,14 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
-import { contributionNotes } from '../artefacts/enriched-artefact';
+import { contributionNotes } from '../artefacts/enriched-artefact.js';
 import {
   isLayoutPlanComplete,
   LAYOUT_PLAN_KIND,
   summarizeLayoutPlan,
   type LayoutPlan
-} from './layout-plan';
-import { computeLayoutQuality, describeLayoutQuality } from './layout-quality';
+} from './layout-plan.js';
+import { computeLayoutQuality, describeLayoutQuality } from './layout-quality.js';
 
 const EXPECTED_OUTCOME =
   'The layout is recorded with the project. Still nothing is drawn: the next step turns these spaces into walls.';

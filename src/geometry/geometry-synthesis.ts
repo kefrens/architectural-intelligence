@@ -38,7 +38,7 @@ import {
   type PackSpaceInput
 } from '@archisimple/skills';
 import { createUuid } from '@archisimple/shared';
-import type { LayoutPlan, LayoutSpace } from '../layout/layout-plan';
+import type { LayoutPlan, LayoutSpace } from '../layout/layout-plan.js';
 import {
   createGeometryGraph,
   GEOMETRY_GRAPH_KIND,
@@ -47,8 +47,8 @@ import {
   type OpeningCandidate,
   type RoomPolygon,
   type WallCandidate
-} from './geometry-graph';
-import { evaluateGeometryGraph } from './geometry-evaluation';
+} from './geometry-graph.js';
+import { evaluateGeometryGraph } from './geometry-evaluation.js';
 
 const SKILL_CONTEXT = createSkillContext();
 

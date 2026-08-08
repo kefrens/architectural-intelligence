@@ -40,20 +40,21 @@ import type { AiProviderAdapter, ContextProvider, ToolDefinition } from '@archis
 import {
   ArchitecturalIntelligenceService,
   type ArchitecturalIntelligenceServiceOptions
-} from './architectural-intelligence-service';
-import { createSessionBriefDraftStore, type BoundBriefDraftStore } from './brief';
-import { createArchitecturalContextProvider } from './context/architectural-context-provider';
+} from './architectural-intelligence-service.js';
+import { BuildingKnowledge, type BuildingKnowledgeOptions } from './understanding/index.js';
+import { createSessionBriefDraftStore, type BoundBriefDraftStore } from './brief/index.js';
+import { createArchitecturalContextProvider } from './context/architectural-context-provider.js';
 import {
   ARCHITECTURAL_PROVIDER_ID,
   createArchitecturalProviderAdapter
-} from './provider/architectural-provider-adapter';
+} from './provider/architectural-provider-adapter.js';
 import {
   captureBriefToolDefinition,
   createArchitecturalToolDefinitions,
   createGeometryToolDefinition,
   createLayoutToolDefinition,
   createProgrammeToolDefinition
-} from './tools';
+} from './tools/index.js';
 
 /**
  * The id this capability registers under. Stable, and the same string the
@@ -91,6 +92,32 @@ export interface ArchitecturalIntelligenceContributionOptions extends Architectu
 }
 
 /**
+ * The form a host uses: the semantic services, and nothing from this layer
+ * (Sprint 30.1, ADR-0030 Rule 1).
+ *
+ * Until this sprint the composition root built a `BuildingKnowledge` itself and
+ * handed it over — which meant `apps/web` naming a layer-4 class in order to
+ * assemble it out of layer-3 services, on this layer's behalf. Assembling it
+ * belongs here: the host has the services, this package knows what to make of
+ * them.
+ *
+ * It is also what lets the host stop naming this package at all, which is the
+ * point of ADR-0030 Rule 1. A caller that already holds a `BuildingKnowledge`
+ * still passes it through {@link ArchitecturalIntelligenceContributionOptions};
+ * nothing was taken away.
+ */
+export interface ArchitecturalIntelligenceServicesOptions
+  extends BuildingKnowledgeOptions, Omit<ArchitecturalIntelligenceServiceOptions, 'knowledge'> {
+  readonly providerLabel?: string;
+  readonly providerModels?: readonly string[];
+}
+
+const hasKnowledge = (
+  options: ArchitecturalIntelligenceContributionOptions | ArchitecturalIntelligenceServicesOptions
+): options is ArchitecturalIntelligenceContributionOptions =>
+  (options as ArchitecturalIntelligenceContributionOptions).knowledge !== undefined;
+
+/**
  * Builds the service and everything that speaks for it.
  *
  * The tool order is the one `toolBroker` composed before this sprint —
@@ -99,9 +126,24 @@ export interface ArchitecturalIntelligenceContributionOptions extends Architectu
  * behaviour change dressed as a refactor.
  */
 export function createArchitecturalIntelligenceContribution(
-  options: ArchitecturalIntelligenceContributionOptions
+  options: ArchitecturalIntelligenceContributionOptions | ArchitecturalIntelligenceServicesOptions
 ): ArchitecturalIntelligenceContribution {
-  const { providerLabel, providerModels, ...serviceOptions } = options;
+  const { providerLabel, providerModels, ...rest } = options;
+  const serviceOptions: ArchitecturalIntelligenceServiceOptions = hasKnowledge(options)
+    ? (rest as ArchitecturalIntelligenceServiceOptions)
+    : (() => {
+        const { queries, building, spatial, inspector, ...planning } =
+          rest as ArchitecturalIntelligenceServicesOptions;
+        return {
+          ...planning,
+          knowledge: new BuildingKnowledge({
+            queries,
+            building,
+            spatial,
+            ...(inspector === undefined ? {} : { inspector })
+          })
+        };
+      })();
   // Built here rather than by the host: the store is this layer's contract,
   // keyed by this layer's artefact kind, and the host only ever filled it in.
   const briefDrafts = serviceOptions.briefDrafts ?? createSessionBriefDraftStore();

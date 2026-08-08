@@ -29,10 +29,13 @@
  * at which point this provider drops that action and a real one takes it.
  */
 
-import { ARCHITECTURAL_ACTIONS, type ArchitecturalIntent } from '../../intent/architectural-intent';
-import type { BuildingKnowledge } from '../../understanding/building-knowledge';
-import type { ArchitecturalOperationProvider } from '../architectural-operation';
-import { blocked, PLAN_BLOCKER_REASONS, type PlanResult } from '../architectural-plan';
+import {
+  ARCHITECTURAL_ACTIONS,
+  type ArchitecturalIntent
+} from '../../intent/architectural-intent.js';
+import type { BuildingKnowledge } from '../../understanding/building-knowledge.js';
+import type { ArchitecturalOperationProvider } from '../architectural-operation.js';
+import { blocked, PLAN_BLOCKER_REASONS, type PlanResult } from '../architectural-plan.js';
 
 export const UNSUPPORTED_OPERATIONS_ID = 'unsupported';
 

@@ -42,7 +42,7 @@ export {
   ArchitecturalIntelligenceService,
   type ArchitecturalIntelligenceServiceOptions,
   type ArchitecturalResponse
-} from './architectural-intelligence-service';
+} from './architectural-intelligence-service.js';
 
 export {
   ARCHITECTURAL_ACTIONS,
@@ -57,7 +57,7 @@ export {
   type ArchitecturalIntentKind,
   type IntentTarget,
   type IntentTargetKind
-} from './intent';
+} from './intent/index.js';
 
 export {
   answerArchitecturalQuestion,
@@ -67,7 +67,7 @@ export {
   type BuildingKnowledgeOptions,
   type EditableProperty,
   type ResolvedTarget
-} from './understanding';
+} from './understanding/index.js';
 
 export {
   ALIGN_WALLS_OPERATION_ID,
@@ -98,7 +98,7 @@ export {
   type PlanningStageProvider,
   type PlanResult,
   type PlanStep
-} from './planning';
+} from './planning/index.js';
 
 export {
   ADJACENCY_STRENGTHS,
@@ -125,7 +125,7 @@ export {
   type SpacePriority,
   type SpaceProgramme,
   type SynthesizeProgrammeOptions
-} from './programme';
+} from './programme/index.js';
 
 export {
   createGeometryGraph,
@@ -150,7 +150,7 @@ export {
   type RoomPolygon,
   type SynthesizeGeometryOptions,
   type WallCandidate
-} from './geometry';
+} from './geometry/index.js';
 
 export {
   circulationNodeId,
@@ -181,17 +181,21 @@ export {
   type ProgrammeProvenance,
   type ResolvedAdjacency,
   type SynthesizeLayoutOptions
-} from './layout';
+} from './layout/index.js';
 
 export {
   createInMemoryPlanningArtefactReader,
   type ApprovedArtefact,
   type PlanningArtefactReader
-} from './artefacts/planning-artefact-reader';
+} from './artefacts/planning-artefact-reader.js';
 
-export { contributorsOf, wasEnriched, type EnrichedArtefact } from './artefacts/enriched-artefact';
+export {
+  contributorsOf,
+  wasEnriched,
+  type EnrichedArtefact
+} from './artefacts/enriched-artefact.js';
 
-export { BULK_STEP_THRESHOLD, toProposal } from './proposal/proposal-builder';
+export { BULK_STEP_THRESHOLD, toProposal } from './proposal/proposal-builder.js';
 
 export {
   answerClarification,
@@ -233,19 +237,19 @@ export {
   type DesiredSpace,
   type RequestClassification,
   type RequestLane
-} from './brief';
+} from './brief/index.js';
 
 export {
   ARCHITECTURAL_CONTEXT_PROVIDER_ID,
   createArchitecturalContextProvider,
   type ArchitecturalContextFragment
-} from './context/architectural-context-provider';
+} from './context/architectural-context-provider.js';
 
 export {
   ARCHITECTURAL_PROVIDER_ID,
   createArchitecturalProviderAdapter,
   type CreateArchitecturalProviderAdapterOptions
-} from './provider/architectural-provider-adapter';
+} from './provider/architectural-provider-adapter.js';
 
 /**
  * The composition seam (Sprint 29.1, ADR-0029 Rule 2). One entry point through
@@ -256,8 +260,9 @@ export {
   createArchitecturalIntelligenceContribution,
   ARCHITECTURAL_INTELLIGENCE_CONTRIBUTION_ID,
   type ArchitecturalIntelligenceContribution,
-  type ArchitecturalIntelligenceContributionOptions
-} from './contribution';
+  type ArchitecturalIntelligenceContributionOptions,
+  type ArchitecturalIntelligenceServicesOptions
+} from './contribution.js';
 
 /** The planning tools, for a host composing them without the contribution. */
 export {
@@ -266,4 +271,4 @@ export {
   createGeometryToolDefinition,
   createLayoutToolDefinition,
   createProgrammeToolDefinition
-} from './tools';
+} from './tools/index.js';

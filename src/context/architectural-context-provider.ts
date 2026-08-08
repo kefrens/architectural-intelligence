@@ -22,9 +22,9 @@
  */
 
 import type { ContextFragment, ContextProvider } from '@archisimple/ai-engine';
-import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
-import { ARCHITECTURAL_ACTIONS } from '../intent/architectural-intent';
-import type { BuildingKnowledge } from '../understanding/building-knowledge';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
+import { ARCHITECTURAL_ACTIONS } from '../intent/architectural-intent.js';
+import type { BuildingKnowledge } from '../understanding/building-knowledge.js';
 
 export const ARCHITECTURAL_CONTEXT_PROVIDER_ID = 'architecture';
 

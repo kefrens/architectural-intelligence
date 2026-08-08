@@ -21,17 +21,20 @@
 
 import { deleteEntityRequest } from '@archisimple/automation-api';
 import { PROPOSAL_RISKS } from '@archisimple/ai-engine';
-import { ARCHITECTURAL_ACTIONS, type ArchitecturalIntent } from '../../intent/architectural-intent';
-import type { BuildingKnowledge } from '../../understanding/building-knowledge';
-import type { ArchitecturalOperationProvider } from '../architectural-operation';
+import {
+  ARCHITECTURAL_ACTIONS,
+  type ArchitecturalIntent
+} from '../../intent/architectural-intent.js';
+import type { BuildingKnowledge } from '../../understanding/building-knowledge.js';
+import type { ArchitecturalOperationProvider } from '../architectural-operation.js';
 import {
   blocked,
   planned,
   PLAN_BLOCKER_REASONS,
   type PlanResult,
   type PlanStep
-} from '../architectural-plan';
-import { affectedEntity } from './affected-elements';
+} from '../architectural-plan.js';
+import { affectedEntity } from './affected-elements.js';
 
 export const DELETE_OPERATION_ID = 'delete-selection';
 

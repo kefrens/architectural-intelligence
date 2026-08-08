@@ -21,17 +21,23 @@
 import { PROPOSAL_RISKS } from '@archisimple/ai-engine';
 import { setPropertyRequest } from '@archisimple/inspector';
 import type { WallDto } from '@archisimple/automation-api';
-import { ARCHITECTURAL_ACTIONS, type ArchitecturalIntent } from '../../intent/architectural-intent';
-import type { BuildingKnowledge, EditableProperty } from '../../understanding/building-knowledge';
-import type { ArchitecturalOperationProvider } from '../architectural-operation';
+import {
+  ARCHITECTURAL_ACTIONS,
+  type ArchitecturalIntent
+} from '../../intent/architectural-intent.js';
+import type {
+  BuildingKnowledge,
+  EditableProperty
+} from '../../understanding/building-knowledge.js';
+import type { ArchitecturalOperationProvider } from '../architectural-operation.js';
 import {
   blocked,
   planned,
   PLAN_BLOCKER_REASONS,
   type PlanResult,
   type PlanStep
-} from '../architectural-plan';
-import { affectedWall } from './affected-elements';
+} from '../architectural-plan.js';
+import { affectedWall } from './affected-elements.js';
 
 export const WALL_PROPERTY_OPERATION_ID = 'wall-property';
 

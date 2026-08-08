@@ -23,9 +23,9 @@
  * Rule 11 anticipates; neither is guessable before then.
  */
 
-import type { ArchitecturalIntent } from '../intent/architectural-intent';
-import { ARCHITECTURAL_ACTIONS } from '../intent/architectural-intent';
-import type { BuildingKnowledge } from './building-knowledge';
+import type { ArchitecturalIntent } from '../intent/architectural-intent.js';
+import { ARCHITECTURAL_ACTIONS } from '../intent/architectural-intent.js';
+import type { BuildingKnowledge } from './building-knowledge.js';
 
 /** Decimal places measurements are reported to, matching the Spatial context provider. */
 const MEASUREMENT_PRECISION = 2;

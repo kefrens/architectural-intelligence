@@ -44,8 +44,8 @@
  */
 
 import { createUuid } from '@archisimple/shared';
-import type { EnrichedArtefact } from '../artefacts/enriched-artefact';
-import type { FunctionalZone, SpacePriority } from '../programme/space-programme';
+import type { EnrichedArtefact } from '../artefacts/enriched-artefact.js';
+import type { FunctionalZone, SpacePriority } from '../programme/space-programme.js';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
 export const LAYOUT_PLAN_KIND = 'layout-plan';

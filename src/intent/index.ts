@@ -10,5 +10,5 @@ export {
   type ArchitecturalIntentKind,
   type IntentTarget,
   type IntentTargetKind
-} from './architectural-intent';
-export { recognizeIntent } from './intent-recognizer';
+} from './architectural-intent.js';
+export { recognizeIntent } from './intent-recognizer.js';

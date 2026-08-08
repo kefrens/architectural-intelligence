@@ -45,8 +45,8 @@ import {
   INTENT_TARGET_KINDS,
   type ArchitecturalIntent,
   type IntentTarget
-} from '../intent';
-import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
+} from '../intent/index.js';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import type { ResolvedToolCall, ToolDefinition, ToolFunctionSchema } from '@archisimple/ai-engine';
 
 /** Every Automation type the four operations below can plan. */

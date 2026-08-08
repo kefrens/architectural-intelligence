@@ -33,9 +33,14 @@ import {
   type ArchitecturalBrief,
   type BriefRequirement,
   type DesiredSpace
-} from './architectural-brief';
-import { desiredSpacesFrom, readBareBoolean, readBareCount, readBriefTopics } from './brief-topics';
-import { MANDATORY_BRIEF_TOPICS, type RequestClassification } from './request-classification';
+} from './architectural-brief.js';
+import {
+  desiredSpacesFrom,
+  readBareBoolean,
+  readBareCount,
+  readBriefTopics
+} from './brief-topics.js';
+import { MANDATORY_BRIEF_TOPICS, type RequestClassification } from './request-classification.js';
 
 /**
  * Topics the platform fills in rather than asks about.

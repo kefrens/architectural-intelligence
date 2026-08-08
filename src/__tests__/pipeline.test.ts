@@ -26,9 +26,9 @@ import {
 } from '@archisimple/ai-engine';
 import type { CommandDispatcher, CommandRequest } from '@archisimple/automation-api';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
-import { createArchitecturalProviderAdapter } from '../provider/architectural-provider-adapter';
-import { createHarness, type Harness } from './harness';
+import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
+import { createArchitecturalProviderAdapter } from '../provider/architectural-provider-adapter.js';
+import { createHarness, type Harness } from './harness.js';
 
 function memoryStore(): AiWorkspaceStore {
   const values = new Map<string, AiWorkspaceProjectData>();

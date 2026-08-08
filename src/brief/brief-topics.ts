@@ -22,7 +22,7 @@ import {
   type BriefRequirement,
   type BriefRequirementSource,
   type DesiredSpace
-} from './architectural-brief';
+} from './architectural-brief.js';
 
 /** Number words a request plausibly uses for a count of rooms or storeys. */
 const NUMBER_WORDS: ReadonlyMap<string, number> = new Map([

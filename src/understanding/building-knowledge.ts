@@ -48,8 +48,8 @@ import {
 } from '@archisimple/building-model';
 import { isEditable, type InspectorService, type PropertyDescriptor } from '@archisimple/inspector';
 import { roomBuildingObjectId, type SpatialRoom, type SpatialService } from '@archisimple/spatial';
-import type { IntentTarget } from '../intent/architectural-intent';
-import { INTENT_TARGET_KINDS } from '../intent/architectural-intent';
+import type { IntentTarget } from '../intent/architectural-intent.js';
+import { INTENT_TARGET_KINDS } from '../intent/architectural-intent.js';
 
 export interface BuildingKnowledgeOptions {
   readonly queries: QueryDispatcher;

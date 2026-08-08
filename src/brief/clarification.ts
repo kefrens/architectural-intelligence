@@ -17,8 +17,8 @@
  * So there is one vocabulary, asked one stage earlier.
  */
 
-import { PLAN_BLOCKER_REASONS, type PlanBlocker } from '../planning/architectural-plan';
-import { BRIEF_TOPICS, type ArchitecturalBrief } from './architectural-brief';
+import { PLAN_BLOCKER_REASONS, type PlanBlocker } from '../planning/architectural-plan.js';
+import { BRIEF_TOPICS, type ArchitecturalBrief } from './architectural-brief.js';
 
 /**
  * One open question.

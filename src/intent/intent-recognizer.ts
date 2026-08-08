@@ -36,7 +36,7 @@ import {
   type ArchitecturalIntent,
   type ArchitecturalIntentKind,
   type IntentTarget
-} from './architectural-intent';
+} from './architectural-intent.js';
 
 /** The document's internal unit. Every distance parameter is normalised to it. */
 const MILLIMETRES_PER_METRE = 1000;

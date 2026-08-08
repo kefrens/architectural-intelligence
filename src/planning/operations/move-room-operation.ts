@@ -25,17 +25,20 @@
 
 import { moveEntityRequest } from '@archisimple/automation-api';
 import { PROPOSAL_RISKS } from '@archisimple/ai-engine';
-import { ARCHITECTURAL_ACTIONS, type ArchitecturalIntent } from '../../intent/architectural-intent';
-import type { BuildingKnowledge } from '../../understanding/building-knowledge';
-import type { ArchitecturalOperationProvider } from '../architectural-operation';
+import {
+  ARCHITECTURAL_ACTIONS,
+  type ArchitecturalIntent
+} from '../../intent/architectural-intent.js';
+import type { BuildingKnowledge } from '../../understanding/building-knowledge.js';
+import type { ArchitecturalOperationProvider } from '../architectural-operation.js';
 import {
   blocked,
   planned,
   PLAN_BLOCKER_REASONS,
   type PlanResult,
   type PlanStep
-} from '../architectural-plan';
-import { affectedRoom, affectedWall } from './affected-elements';
+} from '../architectural-plan.js';
+import { affectedRoom, affectedWall } from './affected-elements.js';
 
 export const MOVE_ROOM_OPERATION_ID = 'move-room';
 

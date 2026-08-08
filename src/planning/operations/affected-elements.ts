@@ -13,7 +13,7 @@
 import type { ProposalAffectedElement } from '@archisimple/ai-engine';
 import type { WallDto } from '@archisimple/automation-api';
 import type { SpatialRoom } from '@archisimple/spatial';
-import type { BuildingKnowledge } from '../../understanding/building-knowledge';
+import type { BuildingKnowledge } from '../../understanding/building-knowledge.js';
 
 export function affectedRoom(
   room: SpatialRoom,

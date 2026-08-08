@@ -17,13 +17,13 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
-import { contributionNotes } from '../artefacts/enriched-artefact';
+import { contributionNotes } from '../artefacts/enriched-artefact.js';
 import {
   ARCHITECTURAL_BRIEF_KIND,
   isBriefComplete,
   summarizeBrief,
   type ArchitecturalBrief
-} from './architectural-brief';
+} from './architectural-brief.js';
 
 /** What a user should expect approving a Brief to do — and, just as much, what it will not do. */
 const EXPECTED_OUTCOME =

@@ -4,5 +4,5 @@ export {
   type BuildingKnowledgeOptions,
   type EditableProperty,
   type ResolvedTarget
-} from './building-knowledge';
-export { answerArchitecturalQuestion, type ArchitecturalAnswer } from './architectural-question';
+} from './building-knowledge.js';
+export { answerArchitecturalQuestion, type ArchitecturalAnswer } from './architectural-question.js';

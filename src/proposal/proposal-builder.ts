@@ -34,7 +34,7 @@ import {
   type ProposalAffectedElement,
   type ProposalOperation
 } from '@archisimple/ai-engine';
-import type { ArchitecturalPlan } from '../planning/architectural-plan';
+import type { ArchitecturalPlan } from '../planning/architectural-plan.js';
 
 /**
  * How many affected elements make a change "bulk".

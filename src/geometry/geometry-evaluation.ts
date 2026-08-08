@@ -22,7 +22,7 @@
  */
 
 import { createSkillContext, evaluatePacking, type PackingEvaluation } from '@archisimple/skills';
-import type { GeometryGraph } from './geometry-graph';
+import type { GeometryGraph } from './geometry-graph.js';
 
 const SKILL_CONTEXT = createSkillContext();
 

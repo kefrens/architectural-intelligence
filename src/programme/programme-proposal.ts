@@ -10,13 +10,13 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
-import { contributionNotes } from '../artefacts/enriched-artefact';
+import { contributionNotes } from '../artefacts/enriched-artefact.js';
 import {
   isProgrammeComplete,
   SPACE_PROGRAMME_KIND,
   summarizeProgramme,
   type SpaceProgramme
-} from './space-programme';
+} from './space-programme.js';
 
 const EXPECTED_OUTCOME =
   'The programme is recorded with the project. Still nothing is drawn: the next step arranges these spaces into a layout.';

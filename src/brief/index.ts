@@ -13,7 +13,7 @@ export {
   type BriefRequirementSource,
   type BriefTopic,
   type DesiredSpace
-} from './architectural-brief';
+} from './architectural-brief.js';
 
 export {
   desiredSpacesFrom,
@@ -21,7 +21,7 @@ export {
   readBareBoolean,
   readBareCount,
   readBriefTopics
-} from './brief-topics';
+} from './brief-topics.js';
 
 export {
   classifyRequest,
@@ -30,7 +30,7 @@ export {
   type ClassifyRequestOptions,
   type RequestClassification,
   type RequestLane
-} from './request-classification';
+} from './request-classification.js';
 
 export {
   clarificationBlocker,
@@ -39,7 +39,7 @@ export {
   describeClarification,
   type ClarificationDialogue,
   type ClarificationQuestion
-} from './clarification';
+} from './clarification.js';
 
 export {
   answerClarification,
@@ -47,14 +47,14 @@ export {
   assembleBriefFromFields,
   startBriefDraft,
   type AssembleBriefOptions
-} from './brief-assembly';
+} from './brief-assembly.js';
 
-export { describeBrief, toBriefProposal } from './brief-proposal';
+export { describeBrief, toBriefProposal } from './brief-proposal.js';
 
-export { createInMemoryBriefDraftStore, type BriefDraftStore } from './brief-draft-store';
+export { createInMemoryBriefDraftStore, type BriefDraftStore } from './brief-draft-store.js';
 
 /** Sprint 29.1 (ADR-0029 Rule 2): the session-bound draft store, formerly in `apps/web`. */
 export {
   createSessionBriefDraftStore,
   type BoundBriefDraftStore
-} from './session-brief-draft-store';
+} from './session-brief-draft-store.js';

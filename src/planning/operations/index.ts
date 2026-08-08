@@ -7,13 +7,13 @@
  * more registers its own alongside.
  */
 
-import type { ArchitecturalOperationProvider } from '../architectural-operation';
-import { createAlignWallsOperationProvider } from './align-walls-operation';
-import { createDeleteOperationProvider } from './delete-operation';
-import { createMoveRoomOperationProvider } from './move-room-operation';
-import { createRenameRoomOperationProvider } from './rename-room-operation';
-import { createUnsupportedOperationProvider } from './unsupported-operations';
-import { createWallPropertyOperationProvider } from './wall-property-operation';
+import type { ArchitecturalOperationProvider } from '../architectural-operation.js';
+import { createAlignWallsOperationProvider } from './align-walls-operation.js';
+import { createDeleteOperationProvider } from './delete-operation.js';
+import { createMoveRoomOperationProvider } from './move-room-operation.js';
+import { createRenameRoomOperationProvider } from './rename-room-operation.js';
+import { createUnsupportedOperationProvider } from './unsupported-operations.js';
+import { createWallPropertyOperationProvider } from './wall-property-operation.js';
 
 export function createBuiltInOperationProviders(): readonly ArchitecturalOperationProvider[] {
   return [

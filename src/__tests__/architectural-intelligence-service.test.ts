@@ -5,15 +5,15 @@
 
 import { PROPOSAL_RISKS } from '@archisimple/ai-engine';
 import { describe, expect, it } from 'vitest';
-import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
-import { createArchitecturalContextProvider } from '../context/architectural-context-provider';
-import { ARCHITECTURAL_ACTIONS } from '../intent/architectural-intent';
+import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
+import { createArchitecturalContextProvider } from '../context/architectural-context-provider.js';
+import { ARCHITECTURAL_ACTIONS } from '../intent/architectural-intent.js';
 import {
   ARCHITECTURAL_PROVIDER_ID,
   createArchitecturalProviderAdapter
-} from '../provider/architectural-provider-adapter';
-import { BULK_STEP_THRESHOLD } from '../proposal/proposal-builder';
-import { createHarness, type Harness } from './harness';
+} from '../provider/architectural-provider-adapter.js';
+import { BULK_STEP_THRESHOLD } from '../proposal/proposal-builder.js';
+import { createHarness, type Harness } from './harness.js';
 
 function serviceFor(harness: Harness): ArchitecturalIntelligenceService {
   return new ArchitecturalIntelligenceService({ knowledge: harness.knowledge });

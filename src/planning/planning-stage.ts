@@ -31,7 +31,7 @@
  * `SkillRegistry` and every other registry here gives.
  */
 
-import type { BuildingKnowledge } from '../understanding/building-knowledge';
+import type { BuildingKnowledge } from '../understanding/building-knowledge.js';
 
 /**
  * The stages a provider may enrich.

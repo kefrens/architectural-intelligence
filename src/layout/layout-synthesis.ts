@@ -38,7 +38,7 @@ import {
   FUNCTIONAL_ZONES,
   type ProgrammeSpace,
   type SpaceProgramme
-} from '../programme/space-programme';
+} from '../programme/space-programme.js';
 import {
   circulationNodeId,
   createLayoutPlan,
@@ -52,7 +52,7 @@ import {
   type LayoutSpace,
   type PlanningGraph,
   type ResolvedAdjacency
-} from './layout-plan';
+} from './layout-plan.js';
 
 export type LayoutSynthesisResult =
   | { readonly ok: true; readonly plan: LayoutPlan }

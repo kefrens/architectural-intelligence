@@ -12,13 +12,13 @@ export {
   type OpeningCandidate,
   type RoomPolygon,
   type WallCandidate
-} from './geometry-graph';
+} from './geometry-graph.js';
 
 export {
   describeEvaluation,
   evaluateGeometryGraph,
   type EvaluateGeometryGraphOptions
-} from './geometry-evaluation';
+} from './geometry-evaluation.js';
 
 export {
   expectedInstances,
@@ -26,10 +26,10 @@ export {
   synthesizeGeometry,
   type GeometrySynthesisResult,
   type SynthesizeGeometryOptions
-} from './geometry-synthesis';
+} from './geometry-synthesis.js';
 
 export {
   describeGeometry,
   toGeometryProposal,
   type ToGeometryProposalOptions
-} from './geometry-proposal';
+} from './geometry-proposal.js';

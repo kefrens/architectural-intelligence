@@ -19,14 +19,18 @@ export {
   type PlanningGraph,
   type ProgrammeProvenance,
   type ResolvedAdjacency
-} from './layout-plan';
+} from './layout-plan.js';
 
 export {
   synthesizeLayout,
   type LayoutSynthesisResult,
   type SynthesizeLayoutOptions
-} from './layout-synthesis';
+} from './layout-synthesis.js';
 
-export { computeLayoutQuality, describeLayoutQuality, type LayoutQuality } from './layout-quality';
+export {
+  computeLayoutQuality,
+  describeLayoutQuality,
+  type LayoutQuality
+} from './layout-quality.js';
 
-export { describeLayout, toLayoutProposal } from './layout-proposal';
+export { describeLayout, toLayoutProposal } from './layout-proposal.js';

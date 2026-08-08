@@ -14,14 +14,14 @@
  */
 
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
-import { contributionNotes } from '../artefacts/enriched-artefact';
+import { contributionNotes } from '../artefacts/enriched-artefact.js';
 import {
   GEOMETRY_GRAPH_KIND,
   isGeometryGraphComplete,
   summarizeGeometryGraph,
   type GeometryGraph
-} from './geometry-graph';
-import { describeEvaluation, evaluateGeometryGraph } from './geometry-evaluation';
+} from './geometry-graph.js';
+import { describeEvaluation, evaluateGeometryGraph } from './geometry-evaluation.js';
 
 const EXPECTED_OUTCOME =
   'The geometry is recorded with the project. Still no walls: the next step gives these edges thickness and builds them.';

@@ -7,13 +7,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { recognizeIntent } from '../intent/intent-recognizer';
-import { createIntent, ARCHITECTURAL_INTENT_KINDS } from '../intent/architectural-intent';
-import { ArchitecturalPlanner } from '../planning/architectural-planner';
-import { createBuiltInOperationProviders } from '../planning/operations';
-import { PLAN_BLOCKER_REASONS, planned, type PlanResult } from '../planning/architectural-plan';
+import { recognizeIntent } from '../intent/intent-recognizer.js';
+import { createIntent, ARCHITECTURAL_INTENT_KINDS } from '../intent/architectural-intent.js';
+import { ArchitecturalPlanner } from '../planning/architectural-planner.js';
+import { createBuiltInOperationProviders } from '../planning/operations/index.js';
+import { PLAN_BLOCKER_REASONS, planned, type PlanResult } from '../planning/architectural-plan.js';
 import { PROPOSAL_RISKS } from '@archisimple/ai-engine';
-import { createHarness, type Harness } from './harness';
+import { createHarness, type Harness } from './harness.js';
 
 function planFor(utterance: string, harness: Harness): PlanResult {
   const planner = new ArchitecturalPlanner();

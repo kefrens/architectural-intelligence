@@ -32,10 +32,10 @@
  * answer, and questions are recognised first for exactly that reason.
  */
 
-import { ARCHITECTURAL_INTENT_KINDS } from '../intent/architectural-intent';
-import { recognizeIntent } from '../intent/intent-recognizer';
-import { BRIEF_TOPICS } from './architectural-brief';
-import { DWELLING_WORDS, readBriefTopics } from './brief-topics';
+import { ARCHITECTURAL_INTENT_KINDS } from '../intent/architectural-intent.js';
+import { recognizeIntent } from '../intent/intent-recognizer.js';
+import { BRIEF_TOPICS } from './architectural-brief.js';
+import { DWELLING_WORDS, readBriefTopics } from './brief-topics.js';
 
 export const REQUEST_LANES = {
   /** Straight to the existing pipeline. Everything that worked before this sprint. */

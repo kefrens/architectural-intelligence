@@ -34,7 +34,7 @@ import {
   briefRequirement,
   type ArchitecturalBrief,
   type DesiredSpace
-} from '../brief';
+} from '../brief/index.js';
 import {
   ADJACENCY_STRENGTHS,
   AREA_SOURCES,
@@ -46,7 +46,7 @@ import {
   type ProgrammeSpace,
   type SpaceProgramme,
   type SpacePriority
-} from './space-programme';
+} from './space-programme.js';
 
 /**
  * Spaces a dwelling needs whether or not anyone mentioned them.

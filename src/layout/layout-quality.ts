@@ -24,8 +24,8 @@
  */
 
 import { createSkillContext, scoreCirculation, scoreLayout } from '@archisimple/skills';
-import { FUNCTIONAL_ZONES, SPACE_PRIORITIES } from '../programme/space-programme';
-import type { LayoutPlan } from './layout-plan';
+import { FUNCTIONAL_ZONES, SPACE_PRIORITIES } from '../programme/space-programme.js';
+import type { LayoutPlan } from './layout-plan.js';
 
 const SKILL_CONTEXT = createSkillContext();
 

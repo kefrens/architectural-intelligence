@@ -15,7 +15,7 @@
  * layout cannot depend on which model answered.
  */
 
-import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
 
 export function createLayoutToolDefinition(

@@ -12,8 +12,8 @@
  * (ADR-0027.1 Rules 1 and 7).
  */
 
-export { createArchitecturalToolDefinitions } from './architectural-tools';
-export { captureBriefToolDefinition } from './brief-tools';
-export { createGeometryToolDefinition } from './geometry-tools';
-export { createLayoutToolDefinition } from './layout-tools';
-export { createProgrammeToolDefinition } from './programme-tools';
+export { createArchitecturalToolDefinitions } from './architectural-tools.js';
+export { captureBriefToolDefinition } from './brief-tools.js';
+export { createGeometryToolDefinition } from './geometry-tools.js';
+export { createLayoutToolDefinition } from './layout-tools.js';
+export { createProgrammeToolDefinition } from './programme-tools.js';

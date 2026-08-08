@@ -14,7 +14,7 @@
  *
  * Actions are plain strings rather than a closed enum on purpose: the
  * built-in ones are listed in {@link ARCHITECTURAL_ACTIONS} for readability,
- * but an {@link import('../planning/architectural-operation').ArchitecturalOperationProvider}
+ * but an {@link import('../planning/architectural-operation.js').ArchitecturalOperationProvider}
  * contributed by a plugin declares its own, and the planner dispatches on the
  * string. A closed union here would make the extension point a lie.
  */

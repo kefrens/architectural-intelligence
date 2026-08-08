@@ -11,8 +11,8 @@ import {
   ARCHITECTURAL_ACTIONS,
   ARCHITECTURAL_INTENT_KINDS,
   INTENT_TARGET_KINDS
-} from '../intent/architectural-intent';
-import { recognizeIntent } from '../intent/intent-recognizer';
+} from '../intent/architectural-intent.js';
+import { recognizeIntent } from '../intent/intent-recognizer.js';
 
 describe('the requests Story 24.5.1 names', () => {
   it('reads "Move the kitchen" as a move naming the kitchen', () => {

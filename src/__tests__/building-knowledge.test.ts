@@ -8,10 +8,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ARCHITECTURAL_ACTIONS, createIntent } from '../intent/architectural-intent';
-import { ARCHITECTURAL_INTENT_KINDS, INTENT_TARGET_KINDS } from '../intent/architectural-intent';
-import { answerArchitecturalQuestion } from '../understanding/architectural-question';
-import { createHarness, WALLS } from './harness';
+import { ARCHITECTURAL_ACTIONS, createIntent } from '../intent/architectural-intent.js';
+import { ARCHITECTURAL_INTENT_KINDS, INTENT_TARGET_KINDS } from '../intent/architectural-intent.js';
+import { answerArchitecturalQuestion } from '../understanding/architectural-question.js';
+import { createHarness, WALLS } from './harness.js';
 
 function ask(action: string, parameters: Record<string, unknown> = {}, selectedIds?: string[]) {
   const harness = createHarness(selectedIds === undefined ? {} : { selectedIds });

@@ -28,7 +28,7 @@ import type {
   ProposalRisk
 } from '@archisimple/ai-engine';
 import type { CommandRequest } from '@archisimple/automation-api';
-import type { ArchitecturalIntent } from '../intent/architectural-intent';
+import type { ArchitecturalIntent } from '../intent/architectural-intent.js';
 
 /** One Automation Request the plan would run, with what it is for. */
 export interface PlanStep {

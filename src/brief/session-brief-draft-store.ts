@@ -16,8 +16,8 @@
  */
 
 import type { AiSessionController } from '@archisimple/ai-engine';
-import { ARCHITECTURAL_BRIEF_KIND, type ArchitecturalBrief } from './architectural-brief';
-import type { BriefDraftStore } from './brief-draft-store';
+import { ARCHITECTURAL_BRIEF_KIND, type ArchitecturalBrief } from './architectural-brief.js';
+import type { BriefDraftStore } from './brief-draft-store.js';
 
 /**
  * The draft store, bound to the AI session that holds the workspace record.

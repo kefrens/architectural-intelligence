@@ -18,12 +18,12 @@ export {
   type ProgrammeSpace,
   type SpacePriority,
   type SpaceProgramme
-} from './space-programme';
+} from './space-programme.js';
 
 export {
   synthesizeProgramme,
   type ProgrammeSynthesisResult,
   type SynthesizeProgrammeOptions
-} from './programme-synthesis';
+} from './programme-synthesis.js';
 
-export { describeProgramme, toProgrammeProposal } from './programme-proposal';
+export { describeProgramme, toProgrammeProposal } from './programme-proposal.js';

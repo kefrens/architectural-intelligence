@@ -18,7 +18,7 @@
  * a complete request still produces a complete Brief.
  */
 
-import type { ArchitecturalBrief } from './architectural-brief';
+import type { ArchitecturalBrief } from './architectural-brief.js';
 
 export interface BriefDraftStore {
   /** The open draft, or `undefined` when the last dialogue finished or none has started. */

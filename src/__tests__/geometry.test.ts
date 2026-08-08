@@ -7,15 +7,15 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
-import { createInMemoryPlanningArtefactReader } from '../artefacts/planning-artefact-reader';
+import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
+import { createInMemoryPlanningArtefactReader } from '../artefacts/planning-artefact-reader.js';
 import {
   ARCHITECTURAL_BRIEF_KIND,
   assembleBrief,
   classifyRequest,
   REQUEST_LANES,
   type ArchitecturalBrief
-} from '../brief';
+} from '../brief/index.js';
 import {
   describeEvaluation,
   evaluateGeometryGraph,
@@ -28,10 +28,18 @@ import {
   synthesizeGeometry,
   toGeometryProposal,
   type GeometryGraph
-} from '../geometry';
-import { LAYOUT_PLAN_KIND, synthesizeLayout, type LayoutPlan } from '../layout';
-import { ArchitecturalPlanner, PLANNING_STAGES, type PlanningStageProvider } from '../planning';
-import { SPACE_PROGRAMME_KIND, synthesizeProgramme, type SpaceProgramme } from '../programme';
+} from '../geometry/index.js';
+import { LAYOUT_PLAN_KIND, synthesizeLayout, type LayoutPlan } from '../layout/index.js';
+import {
+  ArchitecturalPlanner,
+  PLANNING_STAGES,
+  type PlanningStageProvider
+} from '../planning/index.js';
+import {
+  SPACE_PROGRAMME_KIND,
+  synthesizeProgramme,
+  type SpaceProgramme
+} from '../programme/index.js';
 import {
   defineSkill,
   packLayout,
@@ -39,7 +47,7 @@ import {
   type PackLayoutInput,
   type PackLayoutOutput
 } from '@archisimple/skills';
-import { createHarness } from './harness';
+import { createHarness } from './harness.js';
 
 const ONE_STOREY = 'Design a single storey family home with 3 bedrooms and 2 bathrooms';
 const TWO_STOREY = 'Design a two-storey family home with 3 bedrooms and 2 bathrooms';

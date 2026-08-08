@@ -94,8 +94,12 @@ import {
   type BriefDraftStore,
   type ClarificationDialogue,
   type RequestClassification
-} from './brief';
-import { ARCHITECTURAL_INTENT_KINDS, recognizeIntent, type ArchitecturalIntent } from './intent';
+} from './brief/index.js';
+import {
+  ARCHITECTURAL_INTENT_KINDS,
+  recognizeIntent,
+  type ArchitecturalIntent
+} from './intent/index.js';
 import {
   ArchitecturalPlanner,
   createBuiltInOperationProviders,
@@ -104,21 +108,21 @@ import {
   type PlanBlocker,
   type PlanningStageCapability,
   type PlanningStageProvider
-} from './planning';
+} from './planning/index.js';
 import {
   describeProgramme,
   SPACE_PROGRAMME_KIND,
   synthesizeProgramme,
   toProgrammeProposal,
   type SpaceProgramme
-} from './programme';
+} from './programme/index.js';
 import {
   describeLayout,
   LAYOUT_PLAN_KIND,
   synthesizeLayout,
   toLayoutProposal,
   type LayoutPlan
-} from './layout';
+} from './layout/index.js';
 import {
   describeGeometry,
   expectedInstances,
@@ -126,18 +130,18 @@ import {
   synthesizeGeometry,
   toGeometryProposal,
   type GeometryGraph
-} from './geometry';
-import { PLANNING_STAGES } from './planning/planning-stage';
+} from './geometry/index.js';
+import { PLANNING_STAGES } from './planning/planning-stage.js';
 import {
   type ApprovedArtefact,
   type PlanningArtefactReader
-} from './artefacts/planning-artefact-reader';
-import { toProposal } from './proposal/proposal-builder';
+} from './artefacts/planning-artefact-reader.js';
+import { toProposal } from './proposal/proposal-builder.js';
 import {
   answerArchitecturalQuestion,
   type ArchitecturalAnswer,
   type BuildingKnowledge
-} from './understanding';
+} from './understanding/index.js';
 
 export interface ArchitecturalIntelligenceServiceOptions {
   readonly knowledge: BuildingKnowledge;

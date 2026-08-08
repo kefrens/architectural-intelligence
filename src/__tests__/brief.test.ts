@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service';
+import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import {
   answerClarification,
   ARCHITECTURAL_BRIEF_KIND,
@@ -29,9 +29,9 @@ import {
   REQUEST_LANES,
   startBriefDraft,
   toBriefProposal
-} from '../brief';
-import { PLAN_BLOCKER_REASONS } from '../planning';
-import { createHarness } from './harness';
+} from '../brief/index.js';
+import { PLAN_BLOCKER_REASONS } from '../planning/index.js';
+import { createHarness } from './harness.js';
 
 const COMPLETE_REQUEST = 'Design a two-storey family home with 3 bedrooms and 2 bathrooms';
 

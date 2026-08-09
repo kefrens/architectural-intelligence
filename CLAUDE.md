@@ -1,11 +1,49 @@
 # CLAUDE.md — @archisimple/architectural-intelligence
 
-Guidance for Claude Code when working **inside this package**. The repository's
-root [CLAUDE.md](../../CLAUDE.md) still applies; this narrows it.
+Guidance for Claude Code in **this repository**, which contains exactly one
+package and nothing else.
 
-This is **layer 4** — the reasoning half of the AI platform. It reads the
-semantic layer, plans, and emits `CommandRequest`s. It owns no state, and it
-executes nothing.
+This is **layer 4** of the ArchiSimple platform — the reasoning half of the AI
+platform. It reads the semantic layer, plans, and emits `CommandRequest`s. It
+owns no state, and it executes nothing.
+
+## Where the rest of the platform is
+
+The application and the eleven platform packages live at
+**[kefrens/archisimple](https://github.com/kefrens/archisimple)**, a separate
+repository. This one was extracted from it in Sprint 30.3 (ADR-0030) and carries
+that history.
+
+**The platform arrives from npm, by version. Never a workspace link, never a
+sibling checkout, never a relative path** (ADR-0030 Rule 4) — CI asserts it. A
+clean clone of this repository builds with nothing else present, and that is the
+property the extraction was for.
+
+Read `../archisimple/docs/adr/` only if you have that checkout; the rules those
+ADRs set are summarised where they bite, below.
+
+## The release order, which is not optional
+
+**The platform releases first; this repository consumes a released version**
+(ADR-0030 Rule 8). Publishing a version that peer-depends on a platform version
+nobody can install fails at a _consumer's_ `npm install`, not in this CI — which
+is the worst place to find out.
+
+A change spanning both, in order:
+
+1. Land it in `archisimple`, bump, release.
+2. Here: raise the `peerDependencies` range to that version, land, release.
+3. There: point `apps/web`'s `optionalDependencies` at this new version.
+
+Each repository is internally lockstep; the two are **not** lockstep with each
+other (ADR-0029 Rule 5, amended per-repository in revision 2.1).
+
+## Peer dependencies are load-bearing
+
+The seven platform packages are `peerDependencies`, and dev-installed so this
+builds and tests alone. **Never make them `dependencies`.** The host already has
+`automation-api` and `ai-engine`; a second copy means a `Proposal` built by one
+and checked by the other, and the failure is subtle rather than loud.
 
 ---
 
@@ -140,21 +178,24 @@ pnpm depcruise          # run before declaring any structural change done
 
 ---
 
-## In flight — ADR-0029 (not yet true)
+## History worth knowing
 
-Two sprints change how this package is _reached_, never what it is:
+Three sprints changed how this package is _reached_, never what it is:
 
-- **29.1** — `apps/web` stops importing this package. The service, the four
-  `planning_*` tools and the provider adapter arrive through a registration seam
-  (Rule 2). The tools move _into_ this package.
-- **29.2** — this package publishes as `@archisimple/architectural-intelligence`
-  on a lockstep `0.x` train (Rules 1, 5).
-
-**The package does not move repositories.** ADR-0029 Rule 1 leaves topology
-undecided; Rule 9 names the evidence that would reopen it. Until then this is a
-package in the monorepo that happens to be installable.
+- **29.1** — `apps/web` stopped importing it. The service, the `planning_*`
+  tools and the provider adapter arrive through a contribution the host
+  composes, and the tools moved _into_ this package.
+- **29.2 / 30.2** — it became publishable, then published, on npm.
+- **30.1** — it became an _optional_ dependency of the application, which builds
+  and runs without it.
+- **30.3** — it moved here, with its history.
 
 **ADR-0029 Rule 3 protects an existing seam**: the four-field artefact envelope
 (`kind`, `id`, `revision`, `value`) is mirrored by `ProposalArtefact`,
 `PlanningArtefactSnapshot` and this package's `ApprovedArtefact` **on purpose**.
 Do not consolidate it — Sprint 29.0 proposed exactly that and was withdrawn.
+
+Note the mirroring matters more now than it did: `PlanningArtefactSnapshot`
+lives in `@archisimple/persistence`, which this package does not depend on at
+all. The envelope crossing a repository boundary as a restated shape rather than
+a shared type is what makes that possible.

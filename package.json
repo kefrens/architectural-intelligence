@@ -29,13 +29,13 @@
     "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@archisimple/ai-engine": "^0.1.0",
-    "@archisimple/automation-api": "^0.1.0",
-    "@archisimple/building-model": "^0.1.0",
-    "@archisimple/inspector": "^0.1.0",
-    "@archisimple/shared": "^0.1.0",
-    "@archisimple/skills": "^0.1.0",
-    "@archisimple/spatial": "^0.1.0",
+    "@archisimple/ai-engine": "^0.2.0",
+    "@archisimple/automation-api": "^0.2.0",
+    "@archisimple/building-model": "^0.2.0",
+    "@archisimple/inspector": "^0.2.0",
+    "@archisimple/shared": "^0.2.0",
+    "@archisimple/skills": "^0.2.0",
+    "@archisimple/spatial": "^0.2.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.3",
     "eslint": "^10.3.0",
@@ -45,13 +45,13 @@
     "vitest": "^4.1.8"
   },
   "peerDependencies": {
-    "@archisimple/ai-engine": "^0.1.0",
-    "@archisimple/automation-api": "^0.1.0",
-    "@archisimple/building-model": "^0.1.0",
-    "@archisimple/inspector": "^0.1.0",
-    "@archisimple/shared": "^0.1.0",
-    "@archisimple/skills": "^0.1.0",
-    "@archisimple/spatial": "^0.1.0"
+    "@archisimple/ai-engine": "^0.2.0",
+    "@archisimple/automation-api": "^0.2.0",
+    "@archisimple/building-model": "^0.2.0",
+    "@archisimple/inspector": "^0.2.0",
+    "@archisimple/shared": "^0.2.0",
+    "@archisimple/skills": "^0.2.0",
+    "@archisimple/spatial": "^0.2.0"
   },
   "engines": {
     "node": ">=20"

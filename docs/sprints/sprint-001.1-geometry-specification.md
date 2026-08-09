@@ -98,7 +98,14 @@ translation, build plan, commands, model — is ArchiSimple's (ADR-0031).
 
 # Architecture Prerequisites
 
-## The blocking one: geometric realisation skills, released
+## The blocking one: geometric realisation skills, released — **satisfied**
+
+> **Met on 2026-08-09.** ArchiSimple Sprint 31.0 shipped
+> `geometry.insertWallThickness`, `mergeColinearRuns`, `classifyJunction` and
+> `findJunctions`, and published the platform at **`0.2.0`**. This repository's
+> `peerDependencies` are at `^0.2.0` and resolve from npm; build, lint and 436
+> tests pass against them. Story 1.1.4 is therefore already done — the rest of
+> this section records why it had to happen first.
 
 The algorithms this sprint needs — thickness insertion, centreline derivation,
 colinear run merging, junction classification — **do not exist yet**, in either
@@ -359,11 +366,11 @@ repository, ever.**
 
 ## Epic 2 — Synthesis
 
-### Story 1.1.4 — Consume the realisation skills
+### Story 1.1.4 — Consume the realisation skills — **done**
 
-Raise `peerDependencies` and `devDependencies` to `^0.2.0`. This story is the
-gate: it does not start until the platform release in _Architecture
-Prerequisites_ has happened.
+`peerDependencies` and `devDependencies` are at `^0.2.0` and resolve `0.2.0`
+from npm. This story was the gate on the platform release, and the release has
+happened.
 
 ### Story 1.1.5 — The defaults table
 
@@ -544,7 +551,7 @@ with no migration — the same property that let 27.9, 28.0 and 28.1a each add o
 
 # Definition of Done
 
-- [ ] Platform released at `0.2.0` with the four realisation skills; peer range raised here.
+- [x] Platform released at `0.2.0` with the realisation skills; peer range raised here.
 - [ ] `GeometrySpecification` exists as a first-class artefact with contract version, conventions, provenance and stable ids.
 - [ ] Synthesised from an approved Geometry Graph, deterministically.
 - [ ] `S1`–`S7` hold, asserted by a conformance suite, and enforced by `gateGeometrySpecification()` on every strategy.

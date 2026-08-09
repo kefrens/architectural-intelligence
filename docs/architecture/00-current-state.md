@@ -63,10 +63,16 @@ building-model / spatial / inspector      the Building Platform (read-only)
 @archisimple/automation-api     the only way anything is written
 ```
 
-The seven platform packages are declared as **`peerDependencies`** at `^0.1.0`,
+The seven platform packages are declared as **`peerDependencies`** at `^0.2.0`,
 so the host and this package share one `automation-api` and one `ai-engine`.
 Two copies of the Automation boundary would be a `Proposal` one half does not
 recognise.
+
+The range moved from `^0.1.0` when ArchiSimple's Sprint 31.0 published the wall
+realisation maths — `geometry.insertWallThickness`, `mergeColinearRuns`,
+`classifyJunction`, `findJunctions` — that the Geometry Specification will call.
+The platform released first and this repository consumed a released version, in
+ADR-0030 Rule 8's order.
 
 Two packages are forbidden and the compliance test says so out loud:
 `@archisimple/core` (Runtime state — ADR-0023 Rule 1) and
@@ -425,7 +431,8 @@ not in CI.
 - **The Geometry Specification** — the fifth and final design artefact, and the
   reason this document exists now. ADR-AI-0001 revision 2.0 is Accepted; no
   `geometry-specification` kind, type, synthesis, validation or tool exists in
-  `src/`. **Sprint 1.1.**
+  `src/`. **Sprint 1.1**, whose one external prerequisite is now met: the
+  platform published the maths at `0.2.0`.
 - **A seventh lane** reaching it. `REQUEST_LANES` has six values and
   `classifyRequest` has no `hasApprovedGeometry` gate. **Sprint 1.2.**
 - **Constraint optimisation** of an approved Geometry Graph. `reviseGeometryGraph`

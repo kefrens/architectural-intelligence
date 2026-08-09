@@ -43,7 +43,10 @@ meta:
 # Automation boundary is a Proposal one half does not recognise (ADR-0030).
 platform:
   dependencyKind: peerDependencies
-  range: '^0.1.0'
+  # Raised from ^0.1.0 when ArchiSimple Sprint 31.0 published the wall
+  # realisation skills. ADR-0030 Rule 8: the platform releases first.
+  range: '^0.2.0'
+  resolvedVersion: '0.2.0'
   packages:
     - '@archisimple/ai-engine'
     - '@archisimple/automation-api'
@@ -333,6 +336,12 @@ notImplemented:
     name: Geometry Specification — the fifth and final design artefact
     evidence: 'ADR-AI-0001 revision 2.0 is Accepted; no geometry-specification kind, type, synthesis, validation or tool exists in src/'
     plannedIn: Sprint 1.1
+    # No longer blocked: the platform published the maths at 0.2.0.
+    prerequisiteMet:
+      sprint: 'archisimple 31.0'
+      released: '0.2.0'
+      provides:
+        [geometry.insertWallThickness, mergeColinearRuns, classifyJunction, findJunctions]
   - id: geometry-specification-lane
     name: A seventh classification lane reaching the Geometry Specification
     evidence: 'REQUEST_LANES has six values; classifyRequest has no hasApprovedGeometry gate'

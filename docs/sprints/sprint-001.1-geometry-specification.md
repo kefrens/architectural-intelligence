@@ -1,6 +1,6 @@
 # Sprint 1.1 — Geometry Specification
 
-> **Status:** Planned
+> **Status:** Completed — 2026-08-09
 >
 > **Version:** 1.0
 >
@@ -27,12 +27,12 @@ mathematics that `@archisimple/skills` owns.
 
 It extends four existing seams and adds no new kind of thing:
 
-| Existing seam                             | How this sprint uses it                          |
-| ----------------------------------------- | ------------------------------------------------ |
-| The artefact + provenance + revision shape | A fifth artefact, built exactly like the fourth   |
-| `Proposal` / `approveProposal`             | One more artefact through the same gate           |
-| `gateGeometryGraph`'s invariant gate       | The same pattern, one stage down                  |
-| `ToolDefinition`                           | A ninth tool, appended                            |
+| Existing seam                              | How this sprint uses it                         |
+| ------------------------------------------ | ----------------------------------------------- |
+| The artefact + provenance + revision shape | A fifth artefact, built exactly like the fourth |
+| `Proposal` / `approveProposal`             | One more artefact through the same gate         |
+| `gateGeometryGraph`'s invariant gate       | The same pattern, one stage down                |
+| `ToolDefinition`                           | A ninth tool, appended                          |
 
 ---
 
@@ -68,7 +68,8 @@ It owns **no thickness, no height, and nothing buildable**. The
 `ArchitecturalPlan` that carries `CommandRequest`s belongs to the Direct
 Execution lane, not to this pipeline.
 
-436 tests pass across 10 files; `tsc -b` and `eslint .` are clean.
+436 tests pass across 10 files; `tsc -b` and `eslint .` are clean. _(At the end
+of this sprint: 492 across 11.)_
 
 ---
 
@@ -103,14 +104,14 @@ translation, build plan, commands, model — is ArchiSimple's (ADR-0031).
 > **Met on 2026-08-09.** ArchiSimple Sprint 31.0 shipped
 > `geometry.insertWallThickness`, `mergeColinearRuns`, `classifyJunction` and
 > `findJunctions`, and published the platform at **`0.2.0`**. This repository's
-> `peerDependencies` are at `^0.2.0` and resolve from npm; build, lint and 436
-> tests pass against them. Story 1.1.4 is therefore already done — the rest of
+> `peerDependencies` are at `^0.2.0` and resolve from npm; build, lint and the
+> whole suite pass against them. Story 1.1.4 is therefore already done — the rest of
 > this section records why it had to happen first.
 
 The algorithms this sprint needs — thickness insertion, centreline derivation,
-colinear run merging, junction classification — **do not exist yet**, in either
-repository. They belong in `@archisimple/skills`, which lives in ArchiSimple and
-arrives here as a `peerDependency` at `^0.1.0`.
+colinear run merging, junction classification — did not exist in either
+repository when this sprint was written. They belong in `@archisimple/skills`,
+which lives in ArchiSimple and arrived here as a `peerDependency` at `^0.1.0`.
 
 Two rules make that placement non-negotiable, and the second is the decisive one:
 
@@ -131,11 +132,11 @@ So, in ADR-0030 Rule 8's order, **before this sprint starts**:
 3. This repository raises its `peerDependencies` (and `devDependencies`) to
    `^0.2.0` as this sprint's first commit.
 
-| Added                                | Answers                                                              |
-| ------------------------------------ | -------------------------------------------------------------------- |
-| `insertWallThickness` (a **Skill**)  | Given rectilinear finished-face polygons and a thickness per wall line: the repositioned polygons, **the wall centrelines**, and how much the envelope grew |
-| `mergeColinearRuns`                  | Adjacent colinear segments of equal thickness, as one run, carrying the ids it merged |
-| `classifyJunction`                   | Whether wall ends meet as a corner, a tee, a cross or a continuation, and where |
+| Added                               | Answers                                                                                                                                                     |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `insertWallThickness` (a **Skill**) | Given rectilinear finished-face polygons and a thickness per wall line: the repositioned polygons, **the wall centrelines**, and how much the envelope grew |
+| `mergeColinearRuns`                 | Adjacent colinear segments of equal thickness, as one run, carrying the ids it merged                                                                       |
+| `classifyJunction`                  | Whether wall ends meet as a corner, a tee, a cross or a continuation, and where                                                                             |
 
 Three, not four: after rail equalisation the rail **is** the centreline, so
 `insertWallThickness` returns them and no separate derivation exists to disagree
@@ -216,7 +217,7 @@ Inserting a wall of thickness `t` therefore has two possible answers:
 
 **No room shrinks. The envelope grows.**
 
-Most rooms keep their dimensions exactly. A room that *spans* a wall line
+Most rooms keep their dimensions exactly. A room that _spans_ a wall line
 inserted across it — a hall running under three rooms separated by two internal
 walls — absorbs those walls and grows, because a 9 m hall and a 9.2 m row above
 it cannot both hold. Preserving every dimension is over-determined, and
@@ -282,19 +283,19 @@ Envelope growth is deliberately **not** an invariant. It is a reported fact.
 Nothing here may be invented silently. Every default is recorded in
 `assumptions`, in the sentence a reviewer reads.
 
-| Decision           | Source in this sprint                                             |
-| ------------------ | ----------------------------------------------------------------- |
-| External thickness | Default table, keyed by nothing yet — one value, stated            |
-| Internal thickness | Default table                                                     |
-| Partition thickness| Default table                                                     |
-| Wall role          | `WallCandidate.external` → external; everything else internal      |
-| Wall height        | Storey height minus slab allowance, from the default table        |
-| Storey height      | Default table; storey elevations come from the Geometry Graph      |
-| Opening kind       | `OpeningCandidate.reason` and the two spaces it connects          |
-| Opening width      | Default per kind                                                  |
-| Opening height     | Default per kind                                                  |
-| Sill height        | Default per kind (zero for doors and passages)                     |
-| Opening position   | Centred on the shared run, unless that would violate `S5`          |
+| Decision            | Source in this sprint                                         |
+| ------------------- | ------------------------------------------------------------- |
+| External thickness  | Default table, keyed by nothing yet — one value, stated       |
+| Internal thickness  | Default table                                                 |
+| Partition thickness | Default table                                                 |
+| Wall role           | `WallCandidate.external` → external; everything else internal |
+| Wall height         | Storey height minus slab allowance, from the default table    |
+| Storey height       | Default table; storey elevations come from the Geometry Graph |
+| Opening kind        | `OpeningCandidate.reason` and the two spaces it connects      |
+| Opening width       | Default per kind                                              |
+| Opening height      | Default per kind                                              |
+| Sill height         | Default per kind (zero for doors and passages)                |
+| Opening position    | Centred on the shared run, unless that would violate `S5`     |
 
 **Load-bearing determination is out of scope.** A wall's role is external or
 internal, and nothing in this sprint decides which walls carry load. That needs
@@ -383,11 +384,20 @@ See _Where the numbers come from_.
 built. It orchestrates; it computes nothing itself:
 
 1. Assign a role and a thickness to every wall candidate.
-2. `insertWallThickness` — rail equalisation, per axis. Returns the repositioned
-   polygons **and** the centrelines, since the rail is the centreline.
+2. **Per storey**, `insertWallThickness` — rail equalisation, per axis. Returns
+   the repositioned polygons **and** the centrelines, since the rail is the
+   centreline.
 3. `mergeColinearRuns` for walls of equal thickness and role.
 4. Recompute space boundaries from the separated polygons; assert `S1`.
-5. `classifyJunction` at every meeting point; assert `S4`.
+5. `findJunctions` over the centrelines; assert `S4`.
+
+**One storey at a time.** `insertWallThickness` takes a single storey's polygons
+and walls, because storeys are packed independently and rails are lines in one
+plan. Passing two storeys at once would group coordinates that never meet into
+one rail and move rooms on the ground floor to suit a wall upstairs. Synthesis
+therefore loops, realises each storey separately, and concatenates — and the
+envelope it reports is the union, since each storey may grow by a different
+amount.
 
 It **never redesigns the Geometry Graph.** No space is added, removed, moved
 between storeys or reshaped. If the arrangement is wrong, the Graph is revised —
@@ -483,6 +493,11 @@ under `src/geometry/` imports `CommandRequest`**. The design lane terminates in
 an artefact, and this is what keeps that structural rather than remembered. The
 Direct Execution lane is untouched and its `CommandRequest` usage stays legal.
 
+The existing thickness ban narrows in the same commit: it forbade the word
+anywhere under `src/geometry/`, which was correct while the directory held one
+artefact. It now names the Geometry Graph's own three files, because the
+Specification legitimately owns thickness and lives beside them.
+
 ### Story 1.1.15 — Documentation
 
 - `docs/architecture/00-current-state.md` and `.yaml` — move the Geometry
@@ -496,21 +511,68 @@ Direct Execution lane is untouched and its `CommandRequest` usage stays legal.
 
 # Architecture Changes
 
-| Change                                    | Where                                         |
-| ----------------------------------------- | --------------------------------------------- |
-| Fifth artefact kind                       | `src/geometry/geometry-specification.ts`      |
-| Synthesis                                 | `src/geometry/specification-synthesis.ts`     |
-| Validation and gate                       | `src/geometry/specification-validation.ts`    |
-| Defaults                                  | `src/geometry/construction-defaults.ts`       |
-| Ninth tool                                | `src/tools/specification-tools.ts`            |
-| Renamed factory                           | `toGeometryProposal` → `toGeometryGraphProposal` |
-| Peer range                                | `^0.1.0` → `^0.2.0`                           |
-| Four new skills                           | ArchiSimple, released first                   |
+| Change               | Where                                                                  |
+| -------------------- | ---------------------------------------------------------------------- |
+| Fifth artefact kind  | `src/geometry/geometry-specification.ts`                               |
+| Synthesis            | `src/geometry/specification-synthesis.ts`                              |
+| Validation and gate  | `src/geometry/specification-validation.ts`                             |
+| Proposal             | `src/geometry/specification-proposal.ts`                               |
+| Defaults             | `src/geometry/construction-defaults.ts`                                |
+| Ninth tool           | `src/tools/specification-tools.ts`                                     |
+| Renamed factory      | `toGeometryProposal` → `toGeometryGraphProposal`, and its file with it |
+| Fifth planning stage | `PLANNING_STAGES.Specification` — the same planner, no new registry    |
+| Service              | `approvedGeometry`, `approvedSpecification`, `generateSpecification`   |
+| Peer range           | `^0.1.0` → `^0.2.0`                                                    |
+| Three new skills     | ArchiSimple Sprint 31.0, released first                                |
 
 No new registry, no new approval surface, no new store, no change to
 `ai-engine`, no change to the project file version. The planning section is
 opaque and keyed by artefact kind, so a fifth kind round-trips at file version 3
 with no migration — the same property that let 27.9, 28.0 and 28.1a each add one.
+
+---
+
+# Implementation Notes
+
+## What shipped
+
+- The artefact, with `contractVersion` `1.0.0`, `METRIC_CONVENTIONS`,
+  `GeometryProvenance`, stable space ids carried from the Geometry Graph, and
+  `realises` on each wall naming the candidates it merged.
+- Synthesis: per storey, `insertWallThickness` → `mergeColinearRuns` →
+  openings → junctions.
+- `validateGeometrySpecification` (exported) and `gateGeometrySpecification`
+  over `S1`–`S7`.
+- `planning_generateSpecification`, appended ninth.
+- Production revision: regenerating over an approved Specification for the same
+  Graph yields revision 2.
+- 33 new tests; 492 pass across 11 files. Build, lint and the compliance scan
+  are clean.
+
+## Where this reads differently from the plan
+
+- **`SpecifiedWall.realises` was not in the plan.** Several wall candidates merge
+  into one run, so "every wall the geometry named was built" cannot be checked by
+  counting. The field makes `S3` a real assertion rather than a hopeful one, and
+  it gives a consumer a way back to the approved geometry.
+- **The compliance test's thickness ban had to be narrowed.** It forbade the word
+  `thickness` anywhere under `src/geometry/`, which was right when the directory
+  held one artefact. It now names the Geometry Graph's three files explicitly —
+  the rule is unchanged, its scope is.
+- **Opening kind comes from the Layout's `relation`,** not from room names.
+  `adjacent` is a door, anything else a cased opening. A rule that sniffed for
+  "hall" would be guessing at something the Layout already recorded.
+- **A fifth `PLANNING_STAGES` value** was needed for stage providers to enrich
+  this artefact. An enum entry, on the existing planner — not a registry
+  (ADR-0027.1 Rule 10).
+
+## Deliberately not built
+
+- A classification lane. The tool and the service reach the stage; an utterance
+  does not. That is Sprint 1.2, and pulling it forward would have left 1.2 with
+  nothing.
+- Windows, load-bearing walls, and any per-wall thickness knowledge model. All
+  three are named in the artefact's own assumptions rather than guessed.
 
 ---
 
@@ -534,35 +596,35 @@ with no migration — the same property that let 27.9, 28.0 and 28.1a each add o
 
 # Testing Strategy
 
-| What                                | How                                                              |
-| ----------------------------------- | ---------------------------------------------------------------- |
-| `S1`–`S7`                           | A conformance suite over synthesised Specifications, in the shape `runPackingConformance` set |
-| Area preservation                   | Property test: every space's area equals its Graph polygon's `achievedArea` |
-| Determinism (`S7`)                  | Same Graph twice, deep-equal but for `id` and `createdAt`         |
-| Envelope growth                     | A two-room graph, exact expected envelope                         |
-| Rail inconsistency                  | A hand-built inconsistent dissection → `PlanBlocker`, not an approximation |
-| Openings                            | Default fit, narrow-to-fit with warning, refusal when impossible  |
-| The gate                            | A deliberately broken synthesis is refused with the clause named  |
-| Revision                            | Generate, approve, generate again → revision 2, one artefact      |
-| Compliance                          | No `CommandRequest` under `src/geometry/`                         |
-| End to end                          | `pipeline.test.ts` extended: utterance → Brief → Programme → Layout → Graph → Specification, with no editor and no network |
+| What               | How                                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `S1`–`S7`          | A conformance suite over synthesised Specifications, in the shape `runPackingConformance` set                              |
+| Area preservation  | Property test: every space's area equals its Graph polygon's `achievedArea`                                                |
+| Determinism (`S7`) | Same Graph twice, deep-equal but for `id` and `createdAt`                                                                  |
+| Envelope growth    | A two-room graph, exact expected envelope                                                                                  |
+| Rail inconsistency | A hand-built inconsistent dissection → `PlanBlocker`, not an approximation                                                 |
+| Openings           | Default fit, narrow-to-fit with warning, refusal when impossible                                                           |
+| The gate           | A deliberately broken synthesis is refused with the clause named                                                           |
+| Revision           | Generate, approve, generate again → revision 2, one artefact                                                               |
+| Compliance         | No `CommandRequest` under `src/geometry/`                                                                                  |
+| End to end         | `pipeline.test.ts` extended: utterance → Brief → Programme → Layout → Graph → Specification, with no editor and no network |
 
 ---
 
 # Definition of Done
 
 - [x] Platform released at `0.2.0` with the realisation skills; peer range raised here.
-- [ ] `GeometrySpecification` exists as a first-class artefact with contract version, conventions, provenance and stable ids.
-- [ ] Synthesised from an approved Geometry Graph, deterministically.
-- [ ] `S1`–`S7` hold, asserted by a conformance suite, and enforced by `gateGeometrySpecification()` on every strategy.
-- [ ] Every default is recorded in `assumptions`; envelope growth is reported; an exceeded stated total warns.
-- [ ] Offered through the existing `Proposal` and approved through `approveProposal`. No second surface.
-- [ ] `validateGeometrySpecification` is exported and produces `PlanBlocker`s.
-- [ ] `planning_generateSpecification` appended last; existing tool order unchanged.
-- [ ] **Production revision demonstrated**: regenerating over an approved Specification yields revision 2.
-- [ ] Nothing under `src/geometry/` imports `CommandRequest`, asserted.
-- [ ] `tsc -b`, `eslint .` and `vitest run` all pass; the end-to-end test reaches the Specification.
-- [ ] `00-current-state.{md,yaml}` updated with what actually shipped, and only that.
+- [x] `GeometrySpecification` exists as a first-class artefact with contract version, conventions, provenance and stable ids.
+- [x] Synthesised from an approved Geometry Graph, deterministically.
+- [x] `S1`–`S7` hold, asserted by a conformance suite, and enforced by `gateGeometrySpecification()` on every strategy.
+- [x] Every default is recorded in `assumptions`; envelope growth is reported; an exceeded stated total warns.
+- [x] Offered through the existing `Proposal` and approved through `approveProposal`. No second surface.
+- [x] `validateGeometrySpecification` is exported and produces `PlanBlocker`s.
+- [x] `planning_generateSpecification` appended last; existing tool order unchanged.
+- [x] **Production revision demonstrated**: regenerating over an approved Specification yields revision 2.
+- [x] Nothing under `src/geometry/` imports `CommandRequest`, asserted.
+- [x] `tsc -b`, `eslint .` and `vitest run` all pass; the end-to-end test reaches the Specification.
+- [x] `00-current-state.{md,yaml}` updated with what actually shipped, and only that.
 
 ---
 

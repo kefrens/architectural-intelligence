@@ -125,11 +125,20 @@ import {
 } from './layout/index.js';
 import {
   describeGeometry,
+  describeSpecification,
   expectedInstances,
   gateGeometryGraph,
+  gateGeometrySpecification,
+  GEOMETRY_GRAPH_KIND,
+  GEOMETRY_SPECIFICATION_KIND,
+  matchesGeometryGraph,
+  reviseGeometrySpecification,
   synthesizeGeometry,
-  toGeometryProposal,
-  type GeometryGraph
+  synthesizeSpecification,
+  toGeometryGraphProposal,
+  toGeometrySpecificationProposal,
+  type GeometryGraph,
+  type GeometrySpecification
 } from './geometry/index.js';
 import { PLANNING_STAGES } from './planning/planning-stage.js';
 import {
@@ -196,6 +205,8 @@ export interface ArchitecturalResponse {
   readonly layout?: LayoutPlan;
   /** Present when the turn produced a Geometry Graph (Sprint 28.1a). Carried by `proposal` too. */
   readonly geometry?: GeometryGraph;
+  /** Present when the turn produced a Geometry Specification (Sprint 1.1). Carried by `proposal` too. */
+  readonly specification?: GeometrySpecification;
 }
 
 export class ArchitecturalIntelligenceService {
@@ -395,8 +406,79 @@ export class ArchitecturalIntelligenceService {
     return {
       intent,
       message: describeGeometry(geometry),
-      proposal: toGeometryProposal(geometry, { expected: expectedInstances(layout) }),
+      proposal: toGeometryGraphProposal(geometry, { expected: expectedInstances(layout) }),
       geometry
+    };
+  }
+
+  /** The Geometry Graph this project has approved, if any (Sprint 1.1). */
+  approvedGeometry(): GeometryGraph | undefined {
+    const artefact = this.artefacts?.current(GEOMETRY_GRAPH_KIND);
+    return isArtefactValue(artefact) ? (artefact.value as GeometryGraph) : undefined;
+  }
+
+  /** The Geometry Specification this project has approved, if any (Sprint 1.1). */
+  approvedSpecification(): GeometrySpecification | undefined {
+    const artefact = this.artefacts?.current(GEOMETRY_SPECIFICATION_KIND);
+    return isArtefactValue(artefact) ? (artefact.value as GeometrySpecification) : undefined;
+  }
+
+  /**
+   * Builds and offers the Geometry Specification for an approved Geometry Graph
+   * (Sprint 1.1 — ADR-AI-0001).
+   *
+   * Same order as the stage above, and for the same reason: synthesise,
+   * **enrich**, **then gate**. A stage provider that breaks an invariant is
+   * caught by the same check as broken synthesis, and neither reaches the user.
+   *
+   * ## Regenerating produces a revision, not a second artefact
+   *
+   * Story 1.1.13. If the project already has an approved Specification for
+   * *this* Graph revision, this returns revision n+1 of it rather than a new
+   * artefact at revision 1 (Rule 9). Without that, approving twice would leave
+   * two Specifications of the same geometry, both revision 1, with nothing to
+   * say which the project meant — and `matchesGeometryGraph` is what makes "the
+   * same geometry" checkable rather than assumed.
+   */
+  generateSpecification(
+    graph: GeometryGraph,
+    intent: ArchitecturalIntent = recognizeIntent('')
+  ): ArchitecturalResponse {
+    const synthesized = synthesizeSpecification({ graph });
+    if (!synthesized.ok) {
+      return { intent, message: synthesized.message };
+    }
+
+    const enriched = this.planner.enrich(
+      PLANNING_STAGES.Specification,
+      synthesized.specification,
+      this.knowledge
+    );
+
+    const previous = this.approvedSpecification();
+    const specification =
+      previous !== undefined && matchesGeometryGraph(previous, graph)
+        ? reviseGeometrySpecification(previous, {
+            storeys: enriched.storeys,
+            spaces: enriched.spaces,
+            walls: enriched.walls,
+            openings: enriched.openings,
+            constraints: enriched.constraints,
+            assumptions: enriched.assumptions,
+            warnings: enriched.warnings
+          })
+        : enriched;
+
+    const gate = gateGeometrySpecification(specification, graph);
+    if (!gate.ok) {
+      return { intent, message: gate.message };
+    }
+
+    return {
+      intent,
+      message: describeSpecification(specification),
+      proposal: toGeometrySpecificationProposal(specification),
+      specification
     };
   }
 

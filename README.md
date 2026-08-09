@@ -51,17 +51,29 @@ sibling path: a clean clone builds with nothing else present.
 
 ## The pipeline
 
-**Architectural Brief → Space Programme → Layout Plan → Geometry Graph**
+**Architectural Brief → Space Programme → Layout Plan → Geometry Graph →
+Geometry Specification**
 
-| Stage                   | Owns                                                 | Does not own   |
-| ----------------------- | ---------------------------------------------------- | -------------- |
-| **Architectural Brief** | Intent, constraints, site facts, occupants           | Any room list  |
-| **Space Programme**     | The rooms, their areas, their adjacency requirements | Any coordinate |
-| **Layout Plan**         | Zones, circulation, relative arrangement             | Any coordinate |
-| **Geometry Graph**      | Coordinates — where the first real geometry appears  | Wall thickness |
+| Stage                      | Owns                                                 | Does not own   |
+| -------------------------- | ---------------------------------------------------- | -------------- |
+| **Architectural Brief**    | Intent, constraints, site facts, occupants           | Any room list  |
+| **Space Programme**        | The rooms, their areas, their adjacency requirements | Any coordinate |
+| **Layout Plan**            | Zones, circulation, relative arrangement             | Any coordinate |
+| **Geometry Graph**         | Coordinates — where the first real geometry appears  | Wall thickness |
+| **Geometry Specification** | Thickness, height, centrelines, opening dimensions   | Topology, ids  |
 
 Each artefact is reviewable, approvable, and persisted by the host. The first
 three own **no geometry at all**.
+
+The **Geometry Specification** (ADR-AI-0001) is where the pipeline ends and the
+only artefact meant to leave this repository. It describes the building
+completely enough that a consuming CAD application builds it without taking a
+single architectural decision — and it stops exactly there: no topology nodes,
+no wall joins, no entity ids, no commands. Those depend on the CAD system, and
+choosing them is not architecture.
+
+It carries its own `contractVersion`, and its own metric conventions as fields,
+because a consumer outside this project has no documentation of ours to read.
 
 The rules that shape every change here (ADR-0027.1):
 
@@ -178,8 +190,14 @@ must return a new object rather than mutate, and stays within a 50 ms budget.
 - **Any UI.** No React, no Three.js.
 - **State.** Rooms are derived, areas are computed, nothing is cached beside the
   thing it was derived from.
-- **The Geometry _Plan_.** Turning an approved Geometry Graph into walls is
-  **not implemented**.
+- **Model construction.** The pipeline ends at the Geometry Specification.
+  Translating one into walls, topology and commands belongs to the consuming
+  application (ArchiSimple ADR-0031), and nothing here can do it: this package
+  holds no dispatcher and imports no Runtime.
+- **Windows, and load-bearing walls.** No opening candidate exists in an
+  external wall for a window to sit in, and deciding which walls carry load
+  needs a structural model this repository does not have. Both are recorded in
+  the specification's own assumptions rather than guessed.
 
 ---
 

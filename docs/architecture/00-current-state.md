@@ -1,6 +1,6 @@
 # Architectural Intelligence — Current State Architecture
 
-**Generated:** 2026-08-09, from the implementation at commit `248d60d`
+**Generated:** 2026-08-09, from the implementation at commit `248d60d` plus Sprint 1.1
 **Package:** `@archisimple/architectural-intelligence` `0.1.1`
 **Companion:** [00-current-state.yaml](00-current-state.yaml) — the same facts, machine-readable
 
@@ -10,7 +10,7 @@ _What is not implemented_ at the end, and it is there. Source code wins over
 this document.
 
 Verified for this snapshot rather than assumed: `tsc -b` builds clean,
-`eslint .` reports nothing, and `vitest run` passes **436 tests across 10
+`eslint .` reports nothing, and `vitest run` passes **492 tests across 11
 files**.
 
 This is the first current-state pair this repository has had. Until Sprint 30.3
@@ -31,20 +31,23 @@ own compliance test rather than trusted to the layering. It reads the Building
 Platform through the services that already derive it, and it emits work that
 somebody else executes, after a user has approved it.
 
-8,642 lines of production TypeScript across ten directories, published as one
+10,334 lines of production TypeScript across ten directories, published as one
 ES module with a single entry point.
 
 Two things reach a host from here:
 
-- **Four planning artefacts** — Architectural Brief, Space Programme, Layout
-  Plan, Geometry Graph — each separately reviewed and approved, each immutable
-  once approved, each carrying provenance for the one above it.
+- **Five planning artefacts** — Architectural Brief, Space Programme, Layout
+  Plan, Geometry Graph, Geometry Specification — each separately reviewed and
+  approved, each immutable once approved, each carrying provenance for the one
+  above it.
 - **One `ArchitecturalPlan`** carrying Automation `CommandRequest`s, for
   requests that state their own geometry and need no design pipeline at all.
 
-The design pipeline **stops at the Geometry Graph**: polygons, wall candidates
-and opening candidates, with no thickness and nothing buildable. Closing that
-gap is ADR-AI-0001 and it is not implemented.
+Since Sprint 1.1 the design pipeline is **complete**: it ends at the Geometry
+Specification, a CAD-independent description carrying wall thickness, height,
+centrelines and dimensioned openings — everything a consuming application needs
+to build the design without taking a single architectural decision of its own
+(ADR-AI-0001). What happens after that is somebody else's repository.
 
 ---
 
@@ -80,14 +83,14 @@ Two packages are forbidden and the compliance test says so out loud:
 
 ## What "owns no state" means concretely
 
-| Property                       | Value                                                        |
-| ------------------------------ | ------------------------------------------------------------ |
-| Owns project state             | No                                                           |
-| Holds a document reference     | No                                                           |
-| Holds a `CommandDispatcher`    | No — asserted by `architecture-compliance.test.ts`           |
-| Executes anything              | No                                                           |
-| Imports React or Three.js      | No                                                           |
-| Emits `CommandRequest`s        | Yes, in the Direct Execution lane — dispatched **by the host** after approval |
+| Property                    | Value                                                                         |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Owns project state          | No                                                                            |
+| Holds a document reference  | No                                                                            |
+| Holds a `CommandDispatcher` | No — asserted by `architecture-compliance.test.ts`                            |
+| Executes anything           | No                                                                            |
+| Imports React or Three.js   | No                                                                            |
+| Emits `CommandRequest`s     | Yes, in the Direct Execution lane — dispatched **by the host** after approval |
 
 The last row is the one that is easy to misread. Producing a Request is not
 executing it. Every write originating here happens in
@@ -102,14 +105,14 @@ a button click uses.
 **deterministically, host-side, before any provider is consulted**, and routes
 it into one of six lanes ([src/brief/request-classification.ts](../../src/brief/request-classification.ts)):
 
-| Lane                     | Produces                        | Reachable only when                |
-| ------------------------ | ------------------------------- | ---------------------------------- |
-| `direct-execution`       | `ArchitecturalPlan` → `Proposal` | always                             |
-| `brief-generation`       | `ArchitecturalBrief`            | enough was said to write one       |
-| `clarification-required` | one focused question            | a mandatory topic is unanswered    |
-| `programme-generation`   | `SpaceProgramme`                | an approved Brief exists           |
-| `layout-generation`      | `LayoutPlan`                    | an approved Programme exists       |
-| `geometry-generation`    | `GeometryGraph`                 | an approved Layout exists          |
+| Lane                     | Produces                         | Reachable only when             |
+| ------------------------ | -------------------------------- | ------------------------------- |
+| `direct-execution`       | `ArchitecturalPlan` → `Proposal` | always                          |
+| `brief-generation`       | `ArchitecturalBrief`             | enough was said to write one    |
+| `clarification-required` | one focused question             | a mandatory topic is unanswered |
+| `programme-generation`   | `SpaceProgramme`                 | an approved Brief exists        |
+| `layout-generation`      | `LayoutPlan`                     | an approved Programme exists    |
+| `geometry-generation`    | `GeometryGraph`                  | an approved Layout exists       |
 
 The three artefact lanes are gated on what the project has actually approved,
 read through an optional `PlanningArtefactReader` the host supplies. A host that
@@ -127,10 +130,10 @@ construction.
 
 ---
 
-# The design pipeline — four artefacts
+# The design pipeline — five artefacts
 
 Each stage is a separate artefact, separately approved, immutable once approved,
-and revised rather than edited. All four flow through the **same** `Proposal`
+and revised rather than edited. All five flow through the **same** `Proposal`
 and the same `AiSessionController.approveProposal`; there is no second approval
 surface anywhere in this package.
 
@@ -142,6 +145,8 @@ Space Programme         logical building  — target areas, adjacency, zoning
 Layout Plan             organisation      — resolved adjacency, circulation, storeys
         ↓
 Geometry Graph          semantic geometry — polygons, candidates, no thickness
+        ↓
+Geometry Specification  buildable geometry — thickness, height, openings
 ```
 
 ## Architectural Brief (Sprint 27.8)
@@ -213,6 +218,61 @@ predicates into interval arithmetic that could be tested exhaustively.
 
 Evaluation, like layout quality, is computed on demand and never stored.
 
+## Geometry Specification (Sprint 1.1)
+
+The last artefact, and the only one that crosses to a consuming CAD application.
+It carries wall thickness, role and height; wall centrelines merged into runs;
+openings with a kind, a position along their wall, a width, a height and a sill;
+space boundaries as they stand once the walls are in; and the metric conventions
+to read all of it by — unit, precision, origin, winding, elevation datum — stated
+as fields, because a consumer outside this project has no `CLAUDE.md`.
+
+It carries a `contractVersion` of its own (`1.0.0`), semantic and independent of
+the npm version, because the two repositories are deliberately not lockstep. A
+consumer checks the **major** through `isContractCompatible` and refuses what it
+was not written for rather than reading it partially.
+
+**Thickness is an architectural decision and it is taken here.** It follows from
+construction type, from what separates what — facts that exist only in this
+repository. Leaving it to a consumer would mean two consumers building two
+different buildings from one approved design.
+[construction-defaults.ts](../../src/geometry/construction-defaults.ts) holds
+every such number in one shape, and `describeDefaults` turns it into the
+sentences a reviewer reads, so 300 mm is visibly the platform's opinion rather
+than the user's requirement.
+
+### Rooms grow; they never shrink
+
+Geometry Graph polygons bound finished faces and are allowed to touch, so
+inserting a wall needs room that is not there. `insertWallThickness` pushes the
+rooms apart rather than shrinking them — and where one room _spans_ a wall line
+inserted across it, that room absorbs the wall and grows. A room delivering more
+than was approved is visible and reported in `warnings`; a room delivering less
+would be a silent shortfall, which is the failure ADR-0027.1 exists to prevent.
+
+The skill takes **one storey at a time**, because a rail is a line in one plan
+and storeys are packed independently. Synthesis loops and concatenates.
+
+### The gate, and why validation is exported
+
+`gateGeometrySpecification` runs after enrichment and before the proposal,
+checking `S1`–`S7`: no space under-delivered, no two spaces touching, every wall
+and opening the geometry named present, wall ends meeting exactly, openings
+inside their walls, boundaries simple, the artefact self-describing.
+
+`validateGeometrySpecification` is exported from the package, which is unusual
+for an internal check and deliberate: ADR-0031 Rule 4 makes a _consumer's_
+rejection a defect in **this** repository rather than a question for the user. A
+consumer's own validation is a safety net that should never fire.
+
+### Regenerating produces a revision
+
+Generating a Specification when the project already approved one for the same
+Geometry Graph returns **revision n+1** rather than a second artefact at revision
+
+1. It is the first production caller of any `revise*` function in this package —
+   above this stage, only tests exercise them.
+
 ---
 
 # Direct Execution — the other lane
@@ -234,13 +294,13 @@ sixteen individually safe moves the user did not expect are not a safe change.
 Six operation providers are registered, and they register exactly the way a
 plugin's would — the planner has no privileged path.
 
-| Provider        | Actions                                                |
-| --------------- | ------------------------------------------------------ |
-| `move-room`     | `edit.moveRoom`                                        |
-| `rename-room`   | `edit.renameRoom`                                      |
-| `wall-property` | `edit.setWallProperty`                                 |
-| `align-walls`   | `edit.alignWalls`                                      |
-| `delete`        | `edit.deleteSelection`                                 |
+| Provider        | Actions                                                          |
+| --------------- | ---------------------------------------------------------------- |
+| `move-room`     | `edit.moveRoom`                                                  |
+| `rename-room`   | `edit.renameRoom`                                                |
+| `wall-property` | `edit.setWallProperty`                                           |
+| `align-walls`   | `edit.alignWalls`                                                |
+| `delete`        | `edit.deleteSelection`                                           |
 | `unsupported`   | `edit.resizeRoom`, `edit.addOpening` — refused with alternatives |
 
 The last row is deliberate rather than missing. "Resize this room" is answered
@@ -290,16 +350,19 @@ Deterministic computation belongs to `@archisimple/skills`, and this layer is
 its first consumer. No stage re-implements geometry, unit or spatial maths, and
 no stage asks a language model to perform it.
 
-| Skill                | Called by                                            |
-| -------------------- | ---------------------------------------------------- |
-| `allocateSpaceAreas` | Space Programme synthesis                            |
-| `assignStoreys`      | Layout synthesis                                     |
-| `resolveAdjacencies` | Layout synthesis                                     |
-| `compareLayoutSpaces`| Layout synthesis                                     |
-| `scoreCirculation`   | Layout quality                                       |
-| `packLayout`         | Geometry synthesis                                   |
-| `evaluatePacking`    | Geometry evaluation, and the invariant gate          |
-| `sharedPolygonEdges` | Geometry synthesis                                   |
+| Skill                 | Called by                                       |
+| --------------------- | ----------------------------------------------- |
+| `allocateSpaceAreas`  | Space Programme synthesis                       |
+| `assignStoreys`       | Layout synthesis                                |
+| `resolveAdjacencies`  | Layout synthesis                                |
+| `compareLayoutSpaces` | Layout synthesis                                |
+| `scoreCirculation`    | Layout quality                                  |
+| `packLayout`          | Geometry synthesis                              |
+| `evaluatePacking`     | Geometry evaluation, and the invariant gate     |
+| `sharedPolygonEdges`  | Geometry synthesis                              |
+| `insertWallThickness` | Specification synthesis — thickness, per storey |
+| `mergeColinearRuns`   | Specification synthesis — segments into walls   |
+| `findJunctions`       | Specification synthesis and validation          |
 
 The balance shifts downward over time on purpose. `computeLayoutQuality` still
 does real work above the skill; `evaluateGeometryGraph` does almost none, because
@@ -320,7 +383,7 @@ two providers claiming one action. The six built-in providers use this seam, so
 a plugin's operation is their peer.
 
 **`PlanningStageProvider`** (Sprint 28.3, ADR-0028) — enriches an artefact at one
-of four stages: `brief`, `programme`, `layout`, `geometry`. A stage is **not**
+of five stages: `brief`, `programme`, `layout`, `geometry`, `specification`. A stage is **not**
 exclusive: several providers may enrich one, and they run in registration order.
 Enrichment runs **before** the geometry invariant gate, so a provider that breaks
 a clause is caught by the same check as a broken packer.
@@ -355,20 +418,24 @@ which is what lets a host satisfy them without depending on this package.
 
 # Tools and the provider
 
-**Eight tool definitions** describe, to a language model, how to reach the four
+**Nine tool definitions** describe, to a language model, how to reach the five
 planning stages and the Building operations. They **describe**; they never
 execute. Every one resolves to a `Proposal` or a blocked sentence.
 
 `planning_captureBrief`, `building_moveRoom`, `building_renameRoom`,
 `building_setWallProperty`, `building_alignWalls`, `planning_generateProgramme`,
-`planning_generateLayout`, `planning_generateGeometry` — offered in that order,
-because `listFunctionSchemas` hands the order to a model and reordering it is a
-behaviour change wearing a refactor's clothes.
+`planning_generateLayout`, `planning_generateGeometry`,
+`planning_generateSpecification` — offered in that order, because
+`listFunctionSchemas` hands the order to a model and reordering it is a
+behaviour change wearing a refactor's clothes. New tools append; they never
+insert.
 
 `planning_captureBrief` is the only one that takes fields, because a Brief is
-built from what the user said and the model is what read it. The three
+built from what the user said and the model is what read it. The four
 `planning_generate*` tools take no artefact: each reads the approved artefact
-behind the service's artefact reader, never from the model's arguments.
+behind the service's artefact reader, never from the model's arguments. The
+empty schema is that guarantee made structural — there is no field through which
+a model could suggest a wall thickness.
 
 The **Architectural Assistant** provider adapter is deterministic, offline and
 synchronous. Its "model" is this service, driven by pattern matching rather than
@@ -379,26 +446,33 @@ provider reaches the same planner through the same tools.
 
 # Tests
 
-| File                                     | Tests |
-| ---------------------------------------- | ----: |
-| `architecture-compliance.test.ts`        |   208 |
-| `programme.test.ts`                      |    38 |
-| `layout.test.ts`                         |    38 |
-| `geometry.test.ts`                       |    35 |
-| `brief.test.ts`                          |    33 |
-| `operations.test.ts`                     |    24 |
-| `intent-recognizer.test.ts`              |    24 |
-| `building-knowledge.test.ts`             |    15 |
-| `architectural-intelligence-service.test.ts` | 13 |
-| `pipeline.test.ts`                       |     8 |
-| **Total**                                | **436** |
+| File                                         |   Tests |
+| -------------------------------------------- | ------: |
+| `architecture-compliance.test.ts`            |     231 |
+| `programme.test.ts`                          |      38 |
+| `layout.test.ts`                             |      38 |
+| `geometry.test.ts`                           |      35 |
+| `specification.test.ts`                      |      33 |
+| `brief.test.ts`                              |      33 |
+| `operations.test.ts`                         |      24 |
+| `intent-recognizer.test.ts`                  |      24 |
+| `building-knowledge.test.ts`                 |      15 |
+| `architectural-intelligence-service.test.ts` |      13 |
+| `pipeline.test.ts`                           |       8 |
+| **Total**                                    | **492** |
 
-`pipeline.test.ts` runs the whole design pipeline — utterance to Geometry
-Graph — with no editor, no building model, no network and no approval surface.
-That the reasoning is testable this way is a design property, not a convenience.
+`pipeline.test.ts` runs the design pipeline through the real `AiSessionController`,
+and `specification.test.ts` runs the full chain — utterance to Geometry
+Specification — with no editor, no building model, no network and no approval
+surface. That the reasoning is testable this way is a design property, not a
+convenience.
 
 `architecture-compliance.test.ts` is a static scan of the production sources,
-parameterised per file, asserting the four structural claims above. `__tests__/`
+parameterised per file, asserting the four structural claims above plus two the
+geometry stages carry: **nothing under `src/geometry/` names `CommandRequest` or
+imports `automation-api`** (ADR-AI-0001 Rule 1 — the design pipeline terminates
+in an artefact), and the Geometry Graph's own files carry no wall thickness,
+which is the Specification's to own. `__tests__/`
 is excluded from the scan: its harness legitimately builds a recording
 dispatcher to prove which Requests a plan would run.
 
@@ -428,11 +502,21 @@ not in CI.
 
 # What is not implemented
 
-- **The Geometry Specification** — the fifth and final design artefact, and the
-  reason this document exists now. ADR-AI-0001 revision 2.0 is Accepted; no
-  `geometry-specification` kind, type, synthesis, validation or tool exists in
-  `src/`. **Sprint 1.1**, whose one external prerequisite is now met: the
-  platform published the maths at `0.2.0`.
+- **A classification lane** for the Specification. `REQUEST_LANES` has six
+  values and `classifyRequest` has no `hasApprovedGeometry` gate: Sprint 1.1
+  reaches the stage through the tool and the service, not through an utterance.
+  **Sprint 1.2.**
+- **Staleness reporting.** `matchesGeometryGraph` makes a stale Specification
+  detectable and `generateSpecification` uses it to decide revision-versus-new,
+  but nothing tells the user their specification no longer matches the geometry
+  (ADR-0027.1 Rule 12). **Sprint 1.2.**
+- **Windows.** The Geometry Graph produces opening candidates only between two
+  rooms, so there is no candidate in an external wall for a window to sit in.
+  The Specification records this in its own assumptions rather than inventing
+  them.
+- **Load-bearing determination.** A wall's role is external or internal; which
+  walls carry load needs a structural model this repository does not have, and
+  guessing would be worse than declining.
 - **A seventh lane** reaching it. `REQUEST_LANES` has six values and
   `classifyRequest` has no `hasApprovedGeometry` gate. **Sprint 1.2.**
 - **Constraint optimisation** of an approved Geometry Graph. `reviseGeometryGraph`
@@ -447,9 +531,10 @@ not in CI.
 - **Any reasoning path that calls a language model.** The provider adapter is
   pattern matching; a model reaches this layer only through host-resolved tool
   calls, and no provider emits artefact JSON.
-- **Sprint documents in this repository.** `docs/sprints/` exists and is empty.
-  Every sprint cited in source comments (24.5 through 30.3) is documented in the
-  ArchiSimple repository.
+- **Sprint documents for the work that predates the extraction.**
+  `docs/sprints/` holds Sprint 1.1 and nothing earlier; every sprint cited in
+  source comments (24.5 through 30.3) is documented in the ArchiSimple
+  repository.
 - **A findings register of its own.** Source comments cite `I3`, `I7` and other
   `I-nn` findings that live in ArchiSimple's register.
 

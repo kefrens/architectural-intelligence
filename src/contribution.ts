@@ -53,7 +53,8 @@ import {
   createArchitecturalToolDefinitions,
   createGeometryToolDefinition,
   createLayoutToolDefinition,
-  createProgrammeToolDefinition
+  createProgrammeToolDefinition,
+  createSpecificationToolDefinition
 } from './tools/index.js';
 
 /**
@@ -201,7 +202,11 @@ function contributionFor(
       // never in the model's arguments.
       createProgrammeToolDefinition(intelligence),
       createLayoutToolDefinition(intelligence),
-      createGeometryToolDefinition(intelligence)
+      createGeometryToolDefinition(intelligence),
+      // Sprint 1.1, appended last. `listFunctionSchemas` hands this order to a
+      // model, so a reordering is a behaviour change wearing a refactor's
+      // clothes — new tools go on the end, never in the middle.
+      createSpecificationToolDefinition(intelligence)
     ],
     contextProvider: createArchitecturalContextProvider(
       intelligence,

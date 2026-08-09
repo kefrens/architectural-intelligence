@@ -26,7 +26,7 @@ import {
   reviseGeometryGraph,
   storeyArea,
   synthesizeGeometry,
-  toGeometryProposal,
+  toGeometryGraphProposal,
   type GeometryGraph
 } from '../geometry/index.js';
 import { LAYOUT_PLAN_KIND, synthesizeLayout, type LayoutPlan } from '../layout/index.js';
@@ -389,7 +389,7 @@ describe('geometry review', () => {
   it('is an artefact proposal that executes nothing (Rule 7)', () => {
     const layout = layoutFor(TWO_STOREY);
     const graph = geometryFrom(layout);
-    const proposal = toGeometryProposal(graph, { expected: expectedInstances(layout) });
+    const proposal = toGeometryGraphProposal(graph, { expected: expectedInstances(layout) });
 
     expect(proposal.subject).toEqual({
       kind: 'artefact',
@@ -401,7 +401,7 @@ describe('geometry review', () => {
 
   it('shows what is guaranteed and what can be improved', () => {
     const layout = layoutFor(TWO_STOREY);
-    const proposal = toGeometryProposal(geometryFrom(layout), {
+    const proposal = toGeometryGraphProposal(geometryFrom(layout), {
       expected: expectedInstances(layout)
     });
 
@@ -414,7 +414,7 @@ describe('geometry review', () => {
     const graph = geometryFrom(layout);
 
     expect(() =>
-      toGeometryProposal(reviseGeometryGraph(graph, { polygons: [] }), {
+      toGeometryGraphProposal(reviseGeometryGraph(graph, { polygons: [] }), {
         expected: expectedInstances(layout)
       })
     ).toThrow(/empty/i);

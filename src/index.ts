@@ -141,7 +141,7 @@ export {
   storeyArea,
   summarizeGeometryGraph,
   synthesizeGeometry,
-  toGeometryProposal,
+  toGeometryGraphProposal,
   type GeometryAdjacency,
   type GeometryGraph,
   type GeometrySynthesisResult,
@@ -150,6 +150,57 @@ export {
   type RoomPolygon,
   type SynthesizeGeometryOptions,
   type WallCandidate
+} from './geometry/index.js';
+
+/**
+ * The Geometry Specification (Sprint 1.1 — ADR-AI-0001).
+ *
+ * The final design artefact, and the only one that crosses to a consuming CAD
+ * application. `validateGeometrySpecification` is exported beside it because a
+ * consumer's rejection is a defect *here* rather than a question for the user
+ * (ADR-0031 Rule 4).
+ */
+export {
+  createGeometrySpecification,
+  DEFAULT_CONSTRUCTION,
+  describeDefaults,
+  describeSpecification,
+  gateGeometrySpecification,
+  GEOMETRY_CONTRACT_VERSION,
+  GEOMETRY_SPECIFICATION_KIND,
+  isContractCompatible,
+  isGeometrySpecificationComplete,
+  matchesGeometryGraph,
+  METRIC_CONVENTIONS,
+  OPENING_KINDS,
+  reviseGeometrySpecification,
+  SPECIFICATION_INVARIANTS,
+  specificationJunctions,
+  storeyFloorArea,
+  summarizeGeometrySpecification,
+  synthesizeSpecification,
+  thicknessFor,
+  toGeometrySpecificationProposal,
+  validateGeometrySpecification,
+  violationsOf,
+  WALL_ROLES,
+  wallHeight,
+  type ConstructionDefaults,
+  type GeometryConstraintRecord,
+  type GeometryProvenance,
+  type GeometrySpecification,
+  type MetricConventions,
+  type OpeningDefaults,
+  type OpeningKind,
+  type SpecificationInvariantId,
+  type SpecificationSynthesisResult,
+  type SpecificationViolation,
+  type SpecifiedOpening,
+  type SpecifiedSpace,
+  type SpecifiedStorey,
+  type SpecifiedWall,
+  type SynthesizeSpecificationOptions,
+  type WallRole
 } from './geometry/index.js';
 
 export {
@@ -270,5 +321,6 @@ export {
   createArchitecturalToolDefinitions,
   createGeometryToolDefinition,
   createLayoutToolDefinition,
-  createProgrammeToolDefinition
+  createProgrammeToolDefinition,
+  createSpecificationToolDefinition
 } from './tools/index.js';

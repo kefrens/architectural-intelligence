@@ -11,12 +11,12 @@
 
 meta:
   generated: '2026-08-09'
-  commit: 248d60d
+  commit: 248d60d # + Sprint 1.1, uncommitted at generation
   package: '@archisimple/architectural-intelligence'
   version: '0.1.1'
   repository: 'https://github.com/kefrens/architectural-intelligence'
   licence: MIT
-  latestImplementedSprint: 30.3
+  latestImplementedSprint: 1.1 # this repository's own numbering since the extraction
   extractedFrom: { repository: archisimple, sprint: 30.3, adr: ADR-0030 }
   packageManager: npm
   standalone: true
@@ -30,13 +30,14 @@ meta:
   typesEntry: dist/index.d.ts
   publishedFiles: [dist]
   node: '>=20'
-  productionSourceLines: 8642
+  productionSourceLines: 10334
+  latestSprint: 1.1 # this repository's own numbering; see docs/sprints/
   productionSourceDirectories: 10
   verification:
     # Executed for this snapshot, not inferred.
     build: { command: 'tsc -b', status: pass }
     lint: { command: 'eslint .', status: pass }
-    test: { command: 'vitest run', status: pass, files: 10, tests: 436 }
+    test: { command: 'vitest run', status: pass, files: 11, tests: 492 }
 
 # The platform this layer reads. Declared as peerDependencies so the host and
 # this package share one automation-api and one ai-engine — two copies of the
@@ -83,16 +84,31 @@ service:
         note: 'reached through a host Tool Broker; a tool call is Direct Execution by construction'
       }
   returns: ArchitecturalResponse
-  responseFields: [intent, message, answer, proposal, blocker, classification, brief, clarification]
+  responseFields:
+    [
+      intent,
+      message,
+      answer,
+      proposal,
+      blocker,
+      classification,
+      brief,
+      clarification,
+      programme,
+      layout,
+      geometry,
+      specification
+    ]
   options:
     knowledge: { type: BuildingKnowledge, required: true }
     planner: { type: ArchitecturalPlanner, default: 'built-in operation providers' }
-    briefDrafts: { type: BriefDraftStore, optional: true, absentMeans: 'no multi-turn clarification' }
+    briefDrafts:
+      { type: BriefDraftStore, optional: true, absentMeans: 'no multi-turn clarification' }
     artefacts:
       {
         type: PlanningArtefactReader,
         optional: true,
-        absentMeans: 'programme, layout and geometry lanes unreachable'
+        absentMeans: 'programme, layout, geometry and specification lanes unreachable'
       }
 
 # The front door. Deterministic, host-side, before any provider is consulted.
@@ -108,9 +124,9 @@ lanes:
     - { id: geometry-generation, produces: GeometryGraph, gate: hasApprovedLayout }
   mandatoryBriefTopics: [storeys, bedrooms, bathrooms]
 
-# The design pipeline. Four artefacts implemented; the fifth is the open work.
+# The design pipeline, complete since Sprint 1.1: five artefacts, five approvals.
 artefacts:
-  implemented: 4
+  implemented: 5
   approvalMechanism: 'ai-engine Proposal + AiSessionController.approveProposal'
   persistedBy: 'the host, in the project file (version 3), opaquely by kind'
   immutable: true
@@ -122,7 +138,8 @@ artefacts:
       file: src/brief/architectural-brief.ts
       owns: [user requirements, desired spaces, assumptions]
       neverOwns: [areas, coordinates, geometry]
-      topics: [storeys, bedrooms, bathrooms, garage, office, accessibility, style, budget, totalArea]
+      topics:
+        [storeys, bedrooms, bathrooms, garage, office, accessibility, style, budget, totalArea]
       assembledBy: src/brief/brief-assembly.ts
       provenance: none
     - kind: space-programme
@@ -148,7 +165,8 @@ artefacts:
         nodeKinds: [space, circulation]
         edgeKinds: [adjacent, connected, separated, vertical-connection]
       synthesizedBy: src/layout/layout-synthesis.ts
-      provenance: { field: sourceProgramme, type: ProgrammeProvenance, staleCheck: matchesProgramme }
+      provenance:
+        { field: sourceProgramme, type: ProgrammeProvenance, staleCheck: matchesProgramme }
       derivedNotStored: { what: LayoutQuality, computedBy: computeLayoutQuality }
     - kind: geometry-graph
       type: GeometryGraph
@@ -167,6 +185,46 @@ artefacts:
         runsBefore: proposal
         appliesTo: 'any strategy, including a plugin’s'
         onViolation: 'hard failure naming the clause; no proposal'
+    # Sprint 1.1, ADR-AI-0001. The final design artefact, and the only one that
+    # crosses to a consuming CAD application.
+    - kind: geometry-specification
+      type: GeometrySpecification
+      sprint: 1.1
+      adr: ADR-AI-0001
+      file: src/geometry/geometry-specification.ts
+      owns:
+        [
+          wall thickness,
+          wall role,
+          wall centrelines,
+          wall height,
+          colinear runs,
+          opening kind and dimensions,
+          space boundaries after thickness insertion,
+          metric conventions
+        ]
+      neverOwns: [topology nodes, wall joins, host entity ids, CommandRequests, transactions]
+      contractVersion: '1.0.0' # semantic, independent of the npm version (Rule 8)
+      contractCheck: isContractCompatible # major only
+      conventions: { unit: metre, precision: 0.001, winding: counter-clockwise }
+      synthesizedBy: src/geometry/specification-synthesis.ts
+      realisationSkill: geometry.insertWallThickness # per storey; rails are lines in one plan
+      defaults: src/geometry/construction-defaults.ts
+      provenance:
+        { field: sourceGeometry, type: GeometryProvenance, staleCheck: matchesGeometryGraph }
+      derivedNotStored: { what: violations, computedBy: validateGeometrySpecification }
+      invariantGate:
+        function: gateGeometrySpecification
+        runsBefore: proposal
+        clauses: [S1, S2, S3, S4, S5, S6, S7]
+        onViolation: 'hard failure naming the clause; no proposal'
+      # A room spanning an inserted wall grows; nothing ever shrinks. Reported in
+      # warnings, because the user approved the areas one artefact ago.
+      areaRule: 'no space is under-delivered (S1)'
+      # Exported because ADR-0031 Rule 4 makes a consumer's rejection a defect
+      # here rather than a question for the user.
+      validationExported: validateGeometrySpecification
+      productionRevision: 'regenerating over an approved specification for the same graph yields revision n+1'
 
 # Every number this layer needs comes from the Skills Platform (ADR-0027,
 # ADR-0027.1 Rule 9). No stage re-implements geometry, unit or spatial maths.
@@ -181,13 +239,22 @@ skillsUsage:
     - { skill: packLayout, usedBy: src/geometry/geometry-synthesis.ts }
     - { skill: evaluatePacking, usedBy: src/geometry/geometry-evaluation.ts }
     - { skill: sharedPolygonEdges, usedBy: src/geometry/geometry-synthesis.ts }
+    # Sprint 1.1, from platform 0.2.0 (ArchiSimple Sprint 31.0).
+    - { skill: insertWallThickness, usedBy: src/geometry/specification-synthesis.ts }
+    - { skill: mergeColinearRuns, usedBy: src/geometry/specification-synthesis.ts }
+    - { skill: findJunctions, usedBy: src/geometry/specification-synthesis.ts }
+    - {
+        skill: 'boundsOf / boundsArea / isRectilinear',
+        usedBy: src/geometry/specification-validation.ts
+      }
     - { skill: createSkillContext, usedBy: 'programme, layout, geometry' }
 
 # The Direct Execution lane. Shipped since Sprint 24.5 and untouched by the
 # planning pipeline above it.
 directExecution:
   planner: { name: ArchitecturalPlanner, file: src/planning/architectural-planner.ts }
-  artefact: { name: ArchitecturalPlan, carries: [PlanStep, CommandRequest, previewGeometry, risk, affects] }
+  artefact:
+    { name: ArchitecturalPlan, carries: [PlanStep, CommandRequest, previewGeometry, risk, affects] }
   proposalBuilder: { file: src/proposal/proposal-builder.ts, bulkThreshold: BULK_STEP_THRESHOLD }
   blockerReasons: [missing-information, ambiguous, unsupported, nothing-to-do]
   intentKinds: [question, modification, ambiguous, unknown]
@@ -228,7 +295,8 @@ knowledge:
     - { service: SpatialService, package: '@archisimple/spatial' }
     - { service: InspectorService, package: '@archisimple/inspector', optional: true }
   textSearch: false
-  answering: { file: src/understanding/architectural-question.ts, function: answerArchitecturalQuestion }
+  answering:
+    { file: src/understanding/architectural-question.ts, function: answerArchitecturalQuestion }
 
 extensionPoints:
   - name: ArchitecturalOperationProvider
@@ -239,10 +307,11 @@ extensionPoints:
     registry: ArchitecturalPlanner
     sprint: 28.3
     adr: ADR-0028
-    stages: [brief, programme, layout, geometry]
+    stages: [brief, programme, layout, geometry, specification]
     exclusive: false
     order: registration
-    attribution: { field: contributors, type: EnrichedArtefact, file: src/artefacts/enriched-artefact.ts }
+    attribution:
+      { field: contributors, type: EnrichedArtefact, file: src/artefacts/enriched-artefact.ts }
 
 # One value a host registers instead of three imports it assembles.
 composition:
@@ -259,10 +328,10 @@ composition:
     - PlanningStageCapability
 
 tools:
-  implemented: 8
+  implemented: 9
   describeOnly: true
   executes: false
-  order: 'captureBrief, building operations, programme, layout, geometry — handed to a model in this order'
+  order: 'captureBrief, building operations, programme, layout, geometry, specification — handed to a model in this order; new tools append, never insert'
   values:
     - planning_captureBrief
     - building_moveRoom
@@ -272,6 +341,7 @@ tools:
     - planning_generateProgramme
     - planning_generateLayout
     - planning_generateGeometry
+    - planning_generateSpecification # Sprint 1.1, appended last on purpose
 
 provider:
   adapter: { id: ARCHITECTURAL_PROVIDER_ID, file: src/provider/architectural-provider-adapter.ts }
@@ -280,17 +350,19 @@ provider:
   offline: true
   callsLanguageModel: false
   recognition: pattern matching
-  contextProvider: { id: ARCHITECTURAL_CONTEXT_PROVIDER_ID, file: src/context/architectural-context-provider.ts }
+  contextProvider:
+    { id: ARCHITECTURAL_CONTEXT_PROVIDER_ID, file: src/context/architectural-context-provider.ts }
 
 tests:
-  files: 10
-  tests: 436
+  files: 11
+  tests: 492
   harness: src/__tests__/harness.ts
   perFile:
-    architecture-compliance: 208
+    architecture-compliance: 231
     programme: 38
     layout: 38
     geometry: 35
+    specification: 33
     brief: 33
     operations: 24
     intent-recognizer: 24
@@ -304,9 +376,13 @@ tests:
       - 'no production source holds or calls a CommandDispatcher'
       - 'no production source imports @archisimple/automation-mcp'
       - 'only the seven permitted @archisimple packages are imported'
+      # Sprint 1.1, ADR-AI-0001 Rule 1: the design pipeline terminates in an
+      # artefact. Direct Execution is unaffected and still emits Requests.
+      - 'no file under src/geometry/ names CommandRequest or imports automation-api'
+      - 'the Geometry Graph carries no wall thickness; the Specification does'
   endToEnd:
     file: src/__tests__/pipeline.test.ts
-    covers: 'utterance → Brief → Programme → Layout → Geometry Graph'
+    covers: 'utterance → Brief → Programme → Layout → Geometry Graph; the Specification chain is covered end to end in specification.test.ts'
     requiresEditor: false
     requiresNetwork: false
 
@@ -318,7 +394,7 @@ ci:
 
 docs:
   adr: [ADR-AI-0001]
-  sprints: [] # docs/sprints exists and is empty
+  sprints: [1.1]
   inheritedFrom:
     repository: archisimple
     documents:
@@ -332,20 +408,20 @@ docs:
       - ADR-0031 — Geometry Execution Pipeline
 
 notImplemented:
-  - id: geometry-specification
-    name: Geometry Specification — the fifth and final design artefact
-    evidence: 'ADR-AI-0001 revision 2.0 is Accepted; no geometry-specification kind, type, synthesis, validation or tool exists in src/'
-    plannedIn: Sprint 1.1
-    # No longer blocked: the platform published the maths at 0.2.0.
-    prerequisiteMet:
-      sprint: 'archisimple 31.0'
-      released: '0.2.0'
-      provides:
-        [geometry.insertWallThickness, mergeColinearRuns, classifyJunction, findJunctions]
   - id: geometry-specification-lane
     name: A seventh classification lane reaching the Geometry Specification
-    evidence: 'REQUEST_LANES has six values; classifyRequest has no hasApprovedGeometry gate'
+    evidence: 'REQUEST_LANES has six values and classifyRequest has no hasApprovedGeometry gate; Sprint 1.1 reaches the stage through the tool and the service, not through an utterance'
     plannedIn: Sprint 1.2
+  - id: specification-staleness-reporting
+    name: Telling a user their specification is stale after the geometry is revised
+    evidence: 'matchesGeometryGraph makes it detectable and generateSpecification uses it to decide revision-versus-new; nothing surfaces the divergence in a message (ADR-0027.1 Rule 12)'
+    plannedIn: Sprint 1.2
+  - id: windows
+    name: Openings in external walls
+    evidence: 'the Geometry Graph produces opening candidates only between two rooms, so there is no candidate in an external wall for a window to be placed in; recorded in the specification’s own assumptions'
+  - id: load-bearing
+    name: Load-bearing determination
+    evidence: 'wall role is external or internal only; deciding which walls carry load needs a structural model this repository does not have'
   - id: constraint-optimisation
     name: Constraint optimisation of an approved Geometry Graph
     evidence: 'reviseGeometryGraph exists as the entry point and nothing calls it in production sources; ADR-0027.1 Rule 13 describes the stage, Sprint 28.2 was never written'
@@ -358,9 +434,9 @@ notImplemented:
   - id: language-model-reasoning
     name: A reasoning path that calls a language model
     evidence: 'the provider adapter is deterministic pattern matching; the model reaches this layer only through host-resolved tool calls (ADR-0027.1 Rule 6)'
-  - id: repository-sprint-documents
-    name: Sprint documents in this repository
-    evidence: 'docs/sprints exists and is empty; every sprint cited in source comments (24.5–30.3) is documented in the archisimple repository'
+  - id: pre-extraction-sprint-documents
+    name: Sprint documents for the work that predates the extraction
+    evidence: 'docs/sprints holds Sprint 1.1 and nothing earlier; every sprint cited in source comments (24.5–30.3) is documented in the archisimple repository'
   - id: architecture-findings
     name: A numbered findings register of its own
     evidence: 'code comments cite I3, I7 and I-nn from the archisimple findings register; this repository has none'

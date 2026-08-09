@@ -187,12 +187,34 @@ describe('architectural-intelligence reasons but never executes', () => {
    * was never "no geometry anywhere", it is "geometry starts precisely here".
    */
   describe('the Geometry Graph owns coordinates but not execution (Rule 3)', () => {
+    /**
+     * Every source in `geometry/`. Since Sprint 1.1 the directory holds two
+     * artefacts, so the assertions below split: what is true of *both* stages is
+     * asserted over all of them, and thickness — true only of the Graph — is
+     * asserted over the Graph's own files.
+     */
     const geometrySources = sources.filter(
       (file) => file.path.startsWith('geometry/') && !file.path.endsWith('-proposal.ts')
     );
 
+    /**
+     * The Geometry Graph's own files.
+     *
+     * Named rather than pattern-matched: the list is short, and a new file
+     * silently joining the set it must not join is exactly what this test exists
+     * to prevent.
+     */
+    const graphSources = geometrySources.filter((file) =>
+      [
+        'geometry/geometry-graph.ts',
+        'geometry/geometry-synthesis.ts',
+        'geometry/geometry-evaluation.ts'
+      ].includes(file.path)
+    );
+
     it('finds the geometry sources', () => {
       expect(geometrySources.length).toBeGreaterThan(0);
+      expect(graphSources).toHaveLength(3);
     });
 
     it.each(geometrySources.map((file) => file.path))(
@@ -208,8 +230,17 @@ describe('architectural-intelligence reasons but never executes', () => {
       }
     );
 
-    it('carries no wall thickness — that belongs to the Geometry Plan', () => {
-      for (const file of geometrySources) {
+    /**
+     * Thickness is one stage down, and since Sprint 1.1 that stage exists.
+     *
+     * The rule is unchanged — a Geometry Graph that knew a wall's thickness
+     * would have collapsed two artefacts into one, and constraint optimisation
+     * could then re-thicken a wall a user approved (ADR-0027.1 Rule 13). What
+     * changed is only that the Geometry *Specification* now legitimately owns
+     * the word, in the same directory.
+     */
+    it('the Geometry Graph carries no wall thickness — that belongs to the Specification', () => {
+      for (const file of graphSources) {
         expect(code(file.source)).not.toMatch(/\bthickness\b/);
       }
     });
@@ -220,6 +251,29 @@ describe('architectural-intelligence reasons but never executes', () => {
       // a direct import would be the first step towards a second one.
       for (const file of geometrySources) {
         expect(importsOf(file.source)).not.toContain('@archisimple/geometry');
+      }
+    });
+
+    /**
+     * ADR-AI-0001 Rule 1, asserted (Sprint 1.1, Story 1.1.14).
+     *
+     * The design pipeline **terminates in an artefact**. A `CommandRequest`
+     * anywhere in `geometry/` would mean the Geometry Specification had started
+     * emitting instructions instead of describing a building — which is the one
+     * thing that would put this repository back inside somebody's CAD system.
+     *
+     * The Direct Execution lane is untouched by this and still emits Requests:
+     * that is what `planning/operations/` is for, and the distinction is that a
+     * command sequence carries no revision, assumption or approval, so none of
+     * ADR-0027.1's rules can apply to one.
+     */
+    it('the design pipeline emits no Requests, at either geometry stage', () => {
+      const proposals = sources.filter(
+        (file) => file.path.startsWith('geometry/') && file.path.endsWith('-proposal.ts')
+      );
+      for (const file of [...geometrySources, ...proposals]) {
+        expect(code(file.source)).not.toMatch(/\bCommandRequest\b/);
+        expect(importsOf(file.source)).not.toContain('@archisimple/automation-api');
       }
     });
   });

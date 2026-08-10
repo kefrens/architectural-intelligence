@@ -94,11 +94,94 @@ stale the moment a later revision lands.
 
 ### Classification is deterministic, and happens before any model call
 
-An utterance is sorted into one of six lanes by `brief/request-classification.ts`
-**before a provider is consulted**. The three stage lanes are each gated on
-approval state (`hasApprovedBrief`, `hasApprovedProgramme`, `hasApprovedLayout`),
-so a stage is unreachable for a caller that has not opted in. That gating _is_
-the pipeline's sequencing — there is no orchestrator object.
+An utterance is sorted into one of eight lanes by
+`brief/request-classification.ts` **before a provider is consulted**. The four
+stage lanes are each gated on approval state, so a stage is unreachable for a
+caller that has not opted in. That gating _is_ the pipeline's sequencing — there
+is no orchestrator object.
+
+Since Sprint 1.2 the gates are read off the workflow state and mean **approved
+_and_ current**: a stage whose input was superseded closes, and the stage that
+fixes it stays open. Sprint 1.3 added the eighth lane, the only one that reaches
+back up the pipeline — a revision of the approved Brief.
+
+---
+
+## Workflow state
+
+Where a design is, and what can be asked for next — derived on every call, stored
+nowhere (ADR-AI-0002).
+
+```ts
+const state = intelligence.workflowState();
+
+state.currentStage; // 'layout'
+state.complete; // false
+
+for (const stage of state.stages) {
+  stage.stage; // 'brief' | 'programme' | 'layout' | 'geometry' | 'specification'
+  stage.artefact; // 'none' | 'draft' | 'approved'
+  stage.approved; // { id, revision } — navigate to it
+  stage.revisions; // every revision the project holds, oldest first
+  stage.stale; // which revision it came from, which is in force, and whether inherited
+  stage.blockers; // PlanBlocker[] — empty exactly when eligible
+  stage.eligible; // the stage above is approved and current
+  stage.actions; // 'generate' | 'regenerate'
+}
+```
+
+The fields are orthogonal on purpose: an approved artefact can be stale and
+remain approved, and a stage can be blocked by something two stages above while
+holding a perfectly good artefact of its own. Staleness is transitive — revising
+a Brief marks the Programme stale directly and everything below it by
+inheritance.
+
+## Revisions
+
+An approved artefact is never edited (ADR-0027.1 Rule 4). Changing one produces
+**revision n+1 of the same lineage**, and the superseded revision stays readable.
+
+```ts
+// Revise the brief: same id, next revision, everything below goes stale.
+intelligence.reviseApprovedBrief('actually make it 4 bedrooms');
+
+// Regenerate a stale stage: revision n+1, derived from the revision now in force.
+intelligence.generateProgramme(intelligence.approvedBrief()!);
+```
+
+Every stage regenerates the same way, and a `generate*` call handed an artefact
+the project has superseded is **refused** rather than acted on — with a
+`superseded` blocker naming what to do instead.
+
+To read the lineage, supply `all()` on the artefact reader. It is optional and
+takes no argument, so a host that already keeps every revision satisfies it
+without changing anything.
+
+**It carries nothing about proposals.** Approval state is the host's: this
+package builds a `Proposal`, hands it over, and never learns its fate — what it
+learns is that an artefact became readable. A host showing "awaiting approval"
+merges its own pending-proposal view onto this projection. For the same reason
+`actions` never lists `approve`, `revise` or `navigate`.
+
+The shape is plain JSON and every identifier is a stable string, so a host
+restates it structurally rather than importing it, and maps the identifiers to
+its own labels.
+
+The same projection reaches a **model** through the `architecture` context
+fragment, which carries `design` beside the capabilities it always reported:
+
+```ts
+design: {
+  (currentStage, // 'programme', or null when the design is complete
+    complete,
+    stages, // stage · artefact · revision · stale · eligible · blockedBecause
+    nextTool); // 'planning_generateProgramme' — what moves this forward
+}
+```
+
+`nextTool` is the field that stops a model guessing which tool comes next. It
+promises nothing about availability: the host's broker still decides which tools
+it offers.
 
 ---
 
@@ -146,6 +229,10 @@ const response = intelligence.interpret('a three-bedroom house of about 120 m²'
 const programme = intelligence.generateProgramme(intelligence.approvedBrief()!);
 const layout = intelligence.generateLayout(intelligence.approvedProgramme()!);
 const geometry = intelligence.generateGeometry(intelligence.approvedLayout()!);
+const specification = intelligence.generateSpecification(intelligence.approvedGeometry()!);
+
+// Or ask where the design is. Derived, read-only, safe to call on every render.
+const state = intelligence.workflowState();
 ```
 
 Every call is **synchronous** and returns an `ArchitecturalResponse`: a message,
@@ -155,8 +242,8 @@ never returns a mutation, and it never performs one.
 
 `briefDrafts` and `artefacts` are optional ports and each one omitted narrows
 what is reachable: no `briefDrafts` means no multi-turn clarification, and no
-`artefacts` means programme generation is unavailable — the classifier never
-reaches that lane.
+`artefacts` means no stage lane is reachable and `workflowState()` reports five
+untouched stages rather than throwing.
 
 ### Extending it
 

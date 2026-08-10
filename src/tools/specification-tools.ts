@@ -18,6 +18,8 @@
 
 import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
+import { PLANNING_STAGES } from '../planning/planning-stage.js';
+import { PLANNING_TOOL_NAMES } from './planning-tool-names.js';
 
 export function createSpecificationToolDefinition(
   intelligence: ArchitecturalIntelligenceService
@@ -28,7 +30,7 @@ export function createSpecificationToolDefinition(
     schema: {
       type: 'function',
       function: {
-        name: 'planning_generateSpecification',
+        name: PLANNING_TOOL_NAMES[PLANNING_STAGES.Specification],
         description:
           'Turns the approved geometry into a complete buildable specification — walls with thickness and height, and openings with real sizes. Call this when the user asks for the walls, the construction, or what comes next after approving the geometry. Takes no arguments: every dimension is derived from the approved geometry, not from you.',
         parameters: { type: 'object', properties: {}, required: [] }

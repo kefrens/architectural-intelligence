@@ -17,6 +17,8 @@
 
 import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
+import { PLANNING_STAGES } from '../planning/planning-stage.js';
+import { PLANNING_TOOL_NAMES } from './planning-tool-names.js';
 
 export function createGeometryToolDefinition(
   intelligence: ArchitecturalIntelligenceService
@@ -27,7 +29,7 @@ export function createGeometryToolDefinition(
     schema: {
       type: 'function',
       function: {
-        name: 'planning_generateGeometry',
+        name: PLANNING_TOOL_NAMES[PLANNING_STAGES.Geometry],
         description:
           'Turns the approved layout plan into room shapes with real dimensions — polygons, wall candidates and opening candidates, but no walls yet. Call this when the user asks for the geometry, the room shapes, or what comes next after approving a layout. Takes no arguments: every coordinate is derived from the approved layout, not from you.',
         parameters: { type: 'object', properties: {}, required: [] }

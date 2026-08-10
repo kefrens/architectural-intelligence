@@ -94,16 +94,28 @@ function crossStoreyLayout(): LayoutPlan {
   return result.plan;
 }
 
+/**
+ * A project holding a coherent chain.
+ *
+ * The Brief is stored under the identity the Programme records having been
+ * derived from. Since Sprint 1.2 that matters: a Programme naming a Brief the
+ * project does not hold is **stale**, and the layout lane closes — correctly
+ * (ADR-AI-0002 Rule 7). Before the workflow state existed nothing looked.
+ */
 function serviceWith(
   programme: SpaceProgramme | undefined,
   planner?: ArchitecturalPlanner
 ): ArchitecturalIntelligenceService {
   const brief = briefFor(TWO_STOREY);
+  const briefIdentity =
+    programme === undefined
+      ? { id: brief.id, revision: brief.revision }
+      : { id: programme.sourceBrief.briefId, revision: programme.sourceBrief.briefRevision };
   return new ArchitecturalIntelligenceService({
     knowledge: createHarness().knowledge,
     ...(planner === undefined ? {} : { planner }),
     artefacts: createInMemoryPlanningArtefactReader([
-      { kind: ARCHITECTURAL_BRIEF_KIND, id: brief.id, revision: brief.revision, value: brief },
+      { kind: ARCHITECTURAL_BRIEF_KIND, ...briefIdentity, value: brief },
       ...(programme === undefined
         ? []
         : [

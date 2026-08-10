@@ -39,6 +39,8 @@ import {
   type DesiredSpace
 } from '../brief/index.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
+import { PLANNING_STAGES } from '../planning/planning-stage.js';
+import { PLANNING_TOOL_NAMES } from './planning-tool-names.js';
 
 /** The numeric topics the schema exposes as first-class arguments. */
 const COUNT_ARGUMENTS: readonly (readonly [string, string, string])[] = [
@@ -99,7 +101,7 @@ export const captureBriefToolDefinition: ToolDefinition = {
   schema: {
     type: 'function',
     function: {
-      name: 'planning_captureBrief',
+      name: PLANNING_TOOL_NAMES[PLANNING_STAGES.Brief],
       description:
         'Records what the user wants from a whole building, before any geometry exists. Call this for high-level design requests ("design a family home", "create a T4 apartment") — never for modelling commands like creating a wall or a room. Supply only what the user actually said: anything you leave out will be asked about rather than assumed.',
       parameters: {

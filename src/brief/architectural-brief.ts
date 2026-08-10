@@ -158,13 +158,24 @@ export function createBrief(input: {
  * Same identity, incremented revision, patched contents. Nothing here mutates
  * the input, so a superseded revision held by an approved proposal stays exactly
  * as the user approved it.
+ *
+ * `utterance` joined the patch in Sprint 1.3, when revising an approved Brief
+ * became a production path. A revision built from a second sentence was built
+ * from that sentence, and the field's whole job is to let the artefact quote
+ * what it came from. The previous revision keeps the previous words, which is
+ * what the lineage is for.
  */
 export function reviseBrief(
   brief: ArchitecturalBrief,
   patch: Partial<
     Pick<
       ArchitecturalBrief,
-      'objectives' | 'desiredSpaces' | 'requirements' | 'assumptions' | 'openQuestions'
+      | 'utterance'
+      | 'objectives'
+      | 'desiredSpaces'
+      | 'requirements'
+      | 'assumptions'
+      | 'openQuestions'
     >
   >
 ): ArchitecturalBrief {

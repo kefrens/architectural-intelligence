@@ -10,13 +10,13 @@
 # there.
 
 meta:
-  generated: '2026-08-09'
-  commit: 248d60d # + Sprint 1.1, uncommitted at generation
+  generated: '2026-08-10'
+  commit: 44e0f43 # + Sprints 1.2 and 1.3, uncommitted at generation
   package: '@archisimple/architectural-intelligence'
-  version: '0.1.1'
+  version: '0.2.0'
   repository: 'https://github.com/kefrens/architectural-intelligence'
   licence: MIT
-  latestImplementedSprint: 1.1 # this repository's own numbering since the extraction
+  latestImplementedSprint: 1.4 # this repository's own numbering since the extraction
   extractedFrom: { repository: archisimple, sprint: 30.3, adr: ADR-0030 }
   packageManager: npm
   standalone: true
@@ -30,14 +30,14 @@ meta:
   typesEntry: dist/index.d.ts
   publishedFiles: [dist]
   node: '>=20'
-  productionSourceLines: 10334
-  latestSprint: 1.1 # this repository's own numbering; see docs/sprints/
-  productionSourceDirectories: 10
+  productionSourceLines: 11380
+  latestSprint: 1.4 # this repository's own numbering; see docs/sprints/
+  productionSourceDirectories: 11
   verification:
     # Executed for this snapshot, not inferred.
     build: { command: 'tsc -b', status: pass }
     lint: { command: 'eslint .', status: pass }
-    test: { command: 'vitest run', status: pass, files: 11, tests: 492 }
+    test: { command: 'vitest run', status: pass, files: 14, tests: 610 }
 
 # The platform this layer reads. Declared as peerDependencies so the host and
 # this package share one automation-api and one ai-engine — two copies of the
@@ -79,6 +79,11 @@ service:
   entryPoints:
     - { name: interpret, classifies: true, note: 'one utterance, one turn, any lane' }
     - {
+        name: workflowState,
+        classifies: false,
+        note: 'Sprint 1.2 — a derived, read-only projection; generates nothing and stores nothing'
+      }
+    - {
         name: interpretIntent,
         classifies: false,
         note: 'reached through a host Tool Broker; a tool call is Direct Execution by construction'
@@ -108,12 +113,12 @@ service:
       {
         type: PlanningArtefactReader,
         optional: true,
-        absentMeans: 'programme, layout, geometry and specification lanes unreachable'
+        absentMeans: 'programme, layout, geometry and specification lanes unreachable; workflowState() reports five untouched stages'
       }
 
 # The front door. Deterministic, host-side, before any provider is consulted.
 lanes:
-  implemented: 6
+  implemented: 8
   file: src/brief/request-classification.ts
   values:
     - { id: direct-execution, produces: 'ArchitecturalPlan → Proposal', gate: none }
@@ -122,15 +127,61 @@ lanes:
     - { id: programme-generation, produces: SpaceProgramme, gate: hasApprovedBrief }
     - { id: layout-generation, produces: LayoutPlan, gate: hasApprovedProgramme }
     - { id: geometry-generation, produces: GeometryGraph, gate: hasApprovedLayout }
+    # Sprint 1.2. The last lane: every artefact is now reachable by conversation
+    # as well as by tool call.
+    - { id: specification-generation, produces: GeometrySpecification, gate: hasApprovedGeometry }
+    # Sprint 1.3. The only lane that reaches back *up* the pipeline: it produces
+    # revision n+1 of the approved Brief, and everything below goes stale.
+    - {
+        id: brief-revision,
+        produces: 'ArchitecturalBrief (revision n+1)',
+        gate: hasBriefToRevise,
+        requires: 'a revision cue AND a brief topic the reader recognises'
+      }
   mandatoryBriefTopics: [storeys, bedrooms, bathrooms]
+  # Sprint 1.2, ADR-AI-0002 Rules 7 and 8. Each stage gate means approved *and
+  # current*, and all four are read off the workflow-state projection rather than
+  # derived a second time inside interpret.
+  gatesDerivedFrom: workflowState()
+  gateMeaning: 'the upstream artefact is approved and is not stale'
+  # Sprint 1.3. A different question from the four stage gates: whether there is
+  # a Brief to change, not whether the stage below it can be built.
+  hasBriefToRevise: 'the brief stage holds an approved artefact'
 
 # The design pipeline, complete since Sprint 1.1: five artefacts, five approvals.
+# The port the host supplies, and the one place it widened.
+artefactPort:
+  interface: PlanningArtefactReader
+  file: src/artefacts/planning-artefact-reader.ts
+  methods:
+    - { name: 'current(kind)', sprint: 27.9, optional: false }
+    # ADR-AI-0002 Rule 10: argument-free and optional, so apps/web's existing
+    # PlanningArtefactRegistry satisfies it structurally. `history(kind)` would
+    # have forced a coordinated two-repository release for a read-only method.
+    - { name: 'all()', sprint: 1.3, optional: true, hostChangeRequired: false }
+  absentAllMeans: 'revisions report the identity in force and no lineage behind it'
+
 artefacts:
   implemented: 5
   approvalMechanism: 'ai-engine Proposal + AiSessionController.approveProposal'
   persistedBy: 'the host, in the project file (version 3), opaquely by kind'
   immutable: true
   revisedBy: 'revise<Artefact>, same identity, incremented revision'
+  # Sprint 1.3. Regenerating a stage the project holds is always revision n+1 of
+  # it, never a second artefact — the provenance field records which upstream
+  # revision the regeneration read.
+  regenerationIsRevision: true
+  lineagesPerStage: 1
+  revisePatchIncludesProvenance: true # widened by Sprint 1.3, all four artefacts
+  productionRevisionCallers:
+    - { function: reviseBrief, calledBy: 'brief-assembly (clarification) and reviseBriefFrom' }
+    - { function: reviseProgramme, calledBy: ArchitecturalIntelligenceService.generateProgramme }
+    - { function: reviseLayoutPlan, calledBy: ArchitecturalIntelligenceService.generateLayout }
+    - { function: reviseGeometryGraph, calledBy: ArchitecturalIntelligenceService.generateGeometry }
+    - {
+        function: reviseGeometrySpecification,
+        calledBy: ArchitecturalIntelligenceService.generateSpecification
+      }
   stages:
     - kind: architectural-brief
       type: ArchitecturalBrief
@@ -226,6 +277,69 @@ artefacts:
       validationExported: validateGeometrySpecification
       productionRevision: 'regenerating over an approved specification for the same graph yields revision n+1'
 
+# The workflow-state projection (Sprint 1.2 — ADR-AI-0002).
+#
+# Derived on every call from the artefact reader and the draft store. Not an
+# artefact: no kind, never approved, never persisted, never cached. It is what
+# lets a host render the pipeline without re-deriving a single rule of it.
+workflow:
+  sprint: 1.2
+  adr: ADR-AI-0002
+  directory: src/workflow/
+  entryPoint: ArchitecturalIntelligenceService.workflowState
+  pureFunction: deriveWorkflowState
+  stageTable: src/workflow/pipeline.ts
+  stages: 5 # reuses PLANNING_STAGES; no second stage vocabulary
+  derived: true
+  persisted: false
+  cached: false
+  stageFields:
+    artefact: [none, draft, approved] # `draft` is reachable for the brief only
+    approved: 'ArtefactIdentity | absent'
+    # Sprint 1.3. Every revision the project holds, oldest first. Falls back to
+    # the identity in force when the host's reader supplies no all().
+    revisions: 'ArtefactIdentity[]'
+    stale: 'StaleDerivation | absent'
+    blockers: 'PlanBlocker[] — empty exactly when eligible'
+    eligible: 'the upstream artefact is approved and not stale'
+    actions: [generate, regenerate]
+  topFields: [stages, currentStage, complete]
+  staleness:
+    transitive: true # Rule 6: own provenance diverged, or the stage above is stale
+    inheritedFlag: 'StaleDerivation.inherited distinguishes the two'
+    predicates: [matchesBrief, matchesProgramme, matchesLayout, matchesGeometryGraph]
+    # Sprint 1.2 gave three of the four their first production caller; before it,
+    # staleness was detectable and never detected.
+    firstProductionCaller: 1.2
+  # Sprint 1.3, Story 1.3.4. More than one artefact id in a stage's revisions is
+  # a split lineage — a defect, not a workflow, and unrepairable through the
+  # projection. Reported as an `ambiguous` blocker on that stage and the one
+  # below it. There are no projects created before Sprint 1.3, so it can only
+  # mean the revision paths regressed.
+  lineageIntegrity:
+    detectedFrom: "more than one distinct id among a stage's revisions"
+    reportedAs: ambiguous
+    cascadesDownstream: true
+  blockerVocabulary:
+    shared: PLAN_BLOCKER_REASONS # ADR-0027.1 Rule 8: one list, extended
+    addedBySprint12: superseded
+    separateVocabulary: false
+  hostOwns:
+    # ADR-AI-0002 Rule 2. This layer never learns that a proposal was approved,
+    # only that an artefact became readable.
+    - proposals
+    - approval state
+    - the pending proposal
+    - session state
+    - artefact persistence
+    - UI, navigation, user interaction
+  crossesAs: 'plain JSON; the host restates the shape structurally (ADR-0030 Rule 2, ADR-0031 Rule 1)'
+  labelsEmitted: 0 # every identifier is a stable string the host maps itself
+  # Sprint 1.4. Two consumers, one derivation (ADR-AI-0002 Rule 8).
+  consumers:
+    - { name: 'classifyRequest stage gates', since: 1.2 }
+    - { name: 'the architectural context fragment', since: 1.4 }
+
 # Every number this layer needs comes from the Skills Platform (ADR-0027,
 # ADR-0027.1 Rule 9). No stage re-implements geometry, unit or spatial maths.
 skillsUsage:
@@ -248,6 +362,25 @@ skillsUsage:
         usedBy: src/geometry/specification-validation.ts
       }
     - { skill: createSkillContext, usedBy: 'programme, layout, geometry' }
+
+# What this layer tells a model about the project (Sprint 24.5, extended 1.4).
+contextFragment:
+  id: architecture
+  file: src/context/architectural-context-provider.ts
+  fields: [editOperations, answerableQuestions, activeFloorId, floorCount, design]
+  design:
+    sprint: 1.4
+    derivedFrom: workflowState()
+    fields: [currentStage, complete, stages, nextTool]
+    stageFields: [stage, artefact, revision, stale, eligible, blockedBecause]
+    nullsRatherThanAbsentKeys: true # it crosses to a model as prompt text
+    nextTool:
+      table: src/tools/planning-tool-names.ts
+      keyedBy: PLANNING_STAGES # total; a sixth stage without a tool fails to compile
+      promisesAvailability: false # the host's broker still checks `requires`
+    carriesProposalState: false # ADR-AI-0002 Rule 2
+    readsModelOutput: false # ADR-0027.1 Rule 6
+    cached: false
 
 # The Direct Execution lane. Shipped since Sprint 24.5 and untouched by the
 # planning pipeline above it.
@@ -354,12 +487,15 @@ provider:
     { id: ARCHITECTURAL_CONTEXT_PROVIDER_ID, file: src/context/architectural-context-provider.ts }
 
 tests:
-  files: 11
-  tests: 492
+  files: 14
+  tests: 610
   harness: src/__tests__/harness.ts
   perFile:
-    architecture-compliance: 231
+    architecture-compliance: 245
+    workflow-state: 43
+    revision-lineage: 40
     programme: 38
+    architectural-context: 17
     layout: 38
     geometry: 35
     specification: 33
@@ -380,9 +516,28 @@ tests:
       # artefact. Direct Execution is unaffected and still emits Requests.
       - 'no file under src/geometry/ names CommandRequest or imports automation-api'
       - 'the Geometry Graph carries no wall thickness; the Specification does'
+      # Sprint 1.2, ADR-AI-0002 Rule 1: a cached projection returns the right
+      # answer for every test that builds its project up front, and the wrong one
+      # for a user who revised a brief an hour into a session.
+      - 'no production source holds an ArchitecturalWorkflowState in a field'
+      - 'no production source assigns workflowState() or deriveWorkflowState() to a binding'
+      # Sprint 1.4: the fragment is the projection's second consumer and the more
+      # tempting one to cache — it is collected every turn, and a stale one would
+      # be read by a model that cannot tell.
+      - 'no production source caches describeDesign() or holds an ArchitecturalDesignState field'
   endToEnd:
     file: src/__tests__/pipeline.test.ts
     covers: 'utterance → Brief → Programme → Layout → Geometry Graph; the Specification chain is covered end to end in specification.test.ts'
+  fiveStageEndToEnd:
+    file: src/__tests__/workflow-state.test.ts
+    sprint: 1.2
+    covers: 'utterance → Brief → approve → Programme → approve → Layout → approve → Geometry → approve → Specification → approve, asserting the workflow state after every approval'
+    approvalIsTheHosts: 'the test writes the approved artefact into the reader, because there is no approval mechanism in this package to invoke'
+  revisionEndToEnd:
+    file: src/__tests__/revision-lineage.test.ts
+    sprint: 1.3
+    covers: 'revise an approved Brief, watch staleness propagate, regenerate each stage in turn, and assert one lineage per stage throughout'
+    structuralPortTest: 'a host-shaped object with only all() and current() satisfies PlanningArtefactReader'
     requiresEditor: false
     requiresNetwork: false
 
@@ -393,8 +548,8 @@ ci:
   releaseTrigger: workflow_dispatch
 
 docs:
-  adr: [ADR-AI-0001]
-  sprints: [1.1]
+  adr: [ADR-AI-0001, ADR-AI-0002] # ADR-AI-0002 at revision 1.2
+  sprints: [1.1, 1.2, 1.3, 1.4]
   inheritedFrom:
     repository: archisimple
     documents:
@@ -408,14 +563,17 @@ docs:
       - ADR-0031 — Geometry Execution Pipeline
 
 notImplemented:
-  - id: geometry-specification-lane
-    name: A seventh classification lane reaching the Geometry Specification
-    evidence: 'REQUEST_LANES has six values and classifyRequest has no hasApprovedGeometry gate; Sprint 1.1 reaches the stage through the tool and the service, not through an utterance'
-    plannedIn: Sprint 1.2
-  - id: specification-staleness-reporting
-    name: Telling a user their specification is stale after the geometry is revised
-    evidence: 'matchesGeometryGraph makes it detectable and generateSpecification uses it to decide revision-versus-new; nothing surfaces the divergence in a message (ADR-0027.1 Rule 12)'
-    plannedIn: Sprint 1.2
+  - id: artefact-navigation
+    name: Which revision the user is looking at
+    evidence: 'the projection lists every revision of every stage; which one is on screen is session state and belongs to the host (ADR-AI-0002, Out of Scope)'
+    byDesign: true
+  - id: revision-diffing
+    name: Comparing two revisions of an artefact
+    evidence: 'both revisions are readable through the reader and nothing computes a difference between them'
+  - id: pending-proposal-in-workflow-state
+    name: Reporting which proposal is awaiting approval
+    evidence: 'ProposalApprovalState and pendingProposal() are session-scoped in @archisimple/ai-engine; this layer observes approval only as an artefact becoming readable (ADR-AI-0002 Rule 2)'
+    byDesign: true
   - id: windows
     name: Openings in external walls
     evidence: 'the Geometry Graph produces opening candidates only between two rooms, so there is no candidate in an external wall for a window to be placed in; recorded in the specification’s own assumptions'
@@ -424,7 +582,7 @@ notImplemented:
     evidence: 'wall role is external or internal only; deciding which walls carry load needs a structural model this repository does not have'
   - id: constraint-optimisation
     name: Constraint optimisation of an approved Geometry Graph
-    evidence: 'reviseGeometryGraph exists as the entry point and nothing calls it in production sources; ADR-0027.1 Rule 13 describes the stage, Sprint 28.2 was never written'
+    evidence: 'Sprint 1.3 gave reviseGeometryGraph a production caller (regeneration), but nothing revises a Graph to satisfy a constraint; ADR-0027.1 Rule 13 describes the stage, Sprint 28.2 was never written'
   - id: non-rectangular-packing
     name: Non-rectilinear room polygons
     evidence: 'the built-in packer produces axis-aligned rectangles only; evaluatePacking refuses a shape it cannot judge rather than judging it wrongly (Sprint 28.1a, stated limitation)'

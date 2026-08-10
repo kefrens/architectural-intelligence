@@ -168,6 +168,75 @@ export function startBriefDraft(options: AssembleBriefOptions): ArchitecturalBri
 }
 
 /**
+ * The next revision of an **approved** Brief, from what the user just said
+ * (Sprint 1.3, Story 1.3.5 — ADR-0027.1 Rule 4).
+ *
+ * Until this sprint there was no such path. A user who re-described their
+ * building after approving a Brief went through {@link assembleBrief}, which
+ * mints a **new id at revision 1** — a second lineage rather than a second
+ * revision. Staleness was still detected downstream, because `matchesBrief`
+ * compares the id as well as the revision, but the record of what the user
+ * approved *first* was disconnected from what they approved instead, which is
+ * the one thing a Brief exists to preserve.
+ *
+ * ## A patch, not a replacement
+ *
+ * Topics stated in the new utterance override their topic; everything else is
+ * carried forward **with its original `source`**, so a requirement the user
+ * stated three turns ago is not quietly downgraded to an assumption. A user
+ * correcting the bathroom count should not lose the storey count they gave
+ * earlier, and a replacement would take it.
+ *
+ * `objectives` are carried forward too: "actually make it 4 bedrooms" is not a
+ * statement about what the building is for, and recomputing the objective from
+ * it would replace "A family home" with the correction that changed one number.
+ * The revision changes requirements; the point of the building is unchanged
+ * until the user says otherwise.
+ *
+ * `utterance` **is** replaced, because it is the sentence *this* revision was
+ * built from. The previous one keeps the previous words — that is what the
+ * lineage is for.
+ *
+ * Answers `undefined` when the utterance moves nothing: a request that restates
+ * what the Brief already says is not a revision, and returning revision n+1
+ * identical to revision n would be supersession theatre. The caller treats it as
+ * a fresh request instead, exactly as {@link answerClarification}'s caller does.
+ */
+export function reviseBriefFrom(
+  approved: ArchitecturalBrief,
+  utterance: string
+): ArchitecturalBrief | undefined {
+  let requirements = approved.requirements;
+  for (const stated of readBriefTopics(utterance)) {
+    requirements = withRequirement(requirements, stated);
+  }
+
+  if (!requirementsChanged(approved.requirements, requirements)) {
+    return undefined;
+  }
+
+  return reviseBrief(approved, {
+    utterance,
+    requirements,
+    desiredSpaces: mergeSpaces(approved.desiredSpaces, requirements)
+  });
+}
+
+/** Whether any topic gained, lost or changed a value. Sources are not compared. */
+function requirementsChanged(
+  before: readonly BriefRequirement[],
+  after: readonly BriefRequirement[]
+): boolean {
+  if (before.length !== after.length) {
+    return true;
+  }
+  return after.some((requirement) => {
+    const previous = before.find((candidate) => candidate.topic === requirement.topic);
+    return previous === undefined || previous.value !== requirement.value;
+  });
+}
+
+/**
  * Folds one clarification answer into a draft.
  *
  * The answer is read twice on purpose. A full sentence — "two bathrooms and a

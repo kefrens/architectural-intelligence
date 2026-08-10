@@ -204,13 +204,28 @@ export function createProgramme(input: {
   };
 }
 
-/** The next revision (Rule 4): same identity, incremented revision, nothing mutated. */
+/**
+ * The next revision (Rule 4): same identity, incremented revision, nothing mutated.
+ *
+ * `sourceBrief` and `contributedBy` joined the patch in Sprint 1.3, when
+ * regenerating a stage became a revision of it rather than a second artefact
+ * (Story 1.3.7). A revision regenerated from a *newer* upstream revision must
+ * record that upstream, or its provenance would claim it came from the one it
+ * superseded — and staleness would then be computed against a lie.
+ */
 export function reviseProgramme(
   programme: SpaceProgramme,
   patch: Partial<
     Pick<
       SpaceProgramme,
-      'spaces' | 'adjacencies' | 'totalArea' | 'assumptions' | 'warnings' | 'objectives'
+      | 'spaces'
+      | 'adjacencies'
+      | 'totalArea'
+      | 'assumptions'
+      | 'warnings'
+      | 'objectives'
+      | 'sourceBrief'
+      | 'contributedBy'
     >
   >
 ): SpaceProgramme {

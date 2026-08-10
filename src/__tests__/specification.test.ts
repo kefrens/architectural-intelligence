@@ -86,6 +86,16 @@ function specificationFrom(graph: GeometryGraph): GeometrySpecification {
   return result.specification;
 }
 
+/**
+ * A project holding a **coherent** chain.
+ *
+ * Each upstream artefact is stored under the identity the artefact below it
+ * records having been derived from. Since Sprint 1.3 that matters at generation
+ * time as well as in the projection: `generateSpecification` refuses to build on
+ * a Geometry Graph the workflow state calls stale (Story 1.3.9), and a graph
+ * whose Layout the project does not hold *is* stale. Before the workflow state
+ * existed nothing looked, so this fixture could store four unrelated artefacts.
+ */
 function serviceWith(
   graph: GeometryGraph | undefined,
   options: {
@@ -96,14 +106,28 @@ function serviceWith(
   const layout = layoutFor(TWO_STOREY);
   const programme = programmeFor(TWO_STOREY);
   const brief = briefFor(TWO_STOREY);
+  const layoutIdentity =
+    graph === undefined
+      ? { id: layout.id, revision: layout.revision }
+      : { id: graph.sourceLayout.layoutId, revision: graph.sourceLayout.layoutRevision };
 
   return new ArchitecturalIntelligenceService({
     knowledge: createHarness().knowledge,
     ...(options.planner === undefined ? {} : { planner: options.planner }),
     artefacts: createInMemoryPlanningArtefactReader([
-      { kind: ARCHITECTURAL_BRIEF_KIND, id: brief.id, revision: 1, value: brief },
-      { kind: SPACE_PROGRAMME_KIND, id: programme.id, revision: 1, value: programme },
-      { kind: LAYOUT_PLAN_KIND, id: layout.id, revision: layout.revision, value: layout },
+      {
+        kind: ARCHITECTURAL_BRIEF_KIND,
+        id: programme.sourceBrief.briefId,
+        revision: programme.sourceBrief.briefRevision,
+        value: brief
+      },
+      {
+        kind: SPACE_PROGRAMME_KIND,
+        id: layout.sourceProgramme.programmeId,
+        revision: layout.sourceProgramme.programmeRevision,
+        value: programme
+      },
+      { kind: LAYOUT_PLAN_KIND, ...layoutIdentity, value: layout },
       ...(graph === undefined
         ? []
         : [{ kind: GEOMETRY_GRAPH_KIND, id: graph.id, revision: graph.revision, value: graph }]),
@@ -276,8 +300,7 @@ describe('S5 — openings fit their walls', () => {
 
     for (const opening of specification.openings) {
       const wall = specification.walls.find((entry) => entry.id === opening.wallId)!;
-      const length =
-        Math.abs(wall.end.x - wall.start.x) + Math.abs(wall.end.y - wall.start.y);
+      const length = Math.abs(wall.end.x - wall.start.x) + Math.abs(wall.end.y - wall.start.y);
 
       expect(opening.width).toBeLessThan(length);
       expect(opening.distanceAlongWall - opening.width / 2).toBeGreaterThanOrEqual(-0.0001);
@@ -486,14 +509,26 @@ describe('regenerating produces a revision, not a second artefact', () => {
     expect(response.specification?.revision).toBe(2);
   });
 
-  it('starts a new artefact when the approved one describes different geometry', () => {
+  /**
+   * Sprint 1.1 asserted the opposite here: a Specification for a *different*
+   * Graph started a new artefact at revision 1. Sprint 1.3 (Story 1.3.7) drops
+   * that condition, because it split the lineage — a project that revised its
+   * geometry ended up holding two Specifications with nothing to say which one
+   * it meant, which is the failure that sprint exists to end.
+   *
+   * The revision records which Graph it came from in `sourceGeometry`, so the
+   * question Sprint 1.1 answered with a new identity is still answerable, and
+   * `matchesGeometryGraph` still answers it.
+   */
+  it('revises rather than forking when the approved one describes different geometry', () => {
     const graph = graphFor(TWO_STOREY);
     const approved = specificationFrom(graphFor(ONE_STOREY));
 
     const response = serviceWith(graph, { specification: approved }).generateSpecification(graph);
 
-    expect(response.specification?.id).not.toBe(approved.id);
-    expect(response.specification?.revision).toBe(1);
+    expect(response.specification?.id).toBe(approved.id);
+    expect(response.specification?.revision).toBe(2);
+    expect(matchesGeometryGraph(response.specification!, graph)).toBe(true);
   });
 });
 

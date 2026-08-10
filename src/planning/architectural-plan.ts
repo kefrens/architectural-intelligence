@@ -69,6 +69,16 @@ export interface ArchitecturalPlan {
  * these two walls" when they are already aligned is not missing information,
  * not ambiguous and not unsupported — filing it under any of those would tell
  * the user something untrue about their own request.
+ *
+ * `Superseded` is a fifth, added by Sprint 1.2 for the same kind of reason. A
+ * stage whose input was replaced by a later revision is not missing that input —
+ * it has one, and it is out of date. Telling a user their layout is blocked for
+ * "missing information" when the programme is sitting right there would be the
+ * untrue sentence again.
+ *
+ * **One vocabulary, extended** (ADR-0027.1 Rule 8, ADR-AI-0002 Rule 4). The
+ * alternative — a `StalenessReason` list beside this one — is the thing Rule 8
+ * was written about.
  */
 export const PLAN_BLOCKER_REASONS = {
   /** The request is understood but left out something needed — a distance, a new name. */
@@ -78,7 +88,9 @@ export const PLAN_BLOCKER_REASONS = {
   /** The request is understood and the platform cannot do it. */
   Unsupported: 'unsupported',
   /** The request is understood, possible, and would change nothing. */
-  NothingToDo: 'nothing-to-do'
+  NothingToDo: 'nothing-to-do',
+  /** The input this needs exists but a later revision replaced it (Sprint 1.2). */
+  Superseded: 'superseded'
 } as const;
 
 export type PlanBlockerReason = (typeof PLAN_BLOCKER_REASONS)[keyof typeof PLAN_BLOCKER_REASONS];

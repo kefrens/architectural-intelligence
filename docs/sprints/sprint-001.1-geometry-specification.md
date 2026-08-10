@@ -10,7 +10,7 @@
 >
 > **Prerequisites:** Sprint 30.3 (extraction) — and **one ArchiSimple platform release**, see _Architecture Prerequisites_
 >
-> **Next Sprint:** 1.2 — End-to-End Reasoning
+> **Next Sprint:** 1.2 — Architectural Workflow State
 
 ---
 

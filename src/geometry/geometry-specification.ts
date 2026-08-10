@@ -229,7 +229,17 @@ export function reviseGeometrySpecification(
   patch: Partial<
     Pick<
       GeometrySpecification,
-      'storeys' | 'spaces' | 'walls' | 'openings' | 'constraints' | 'assumptions' | 'warnings'
+      | 'storeys'
+      | 'spaces'
+      | 'walls'
+      | 'openings'
+      | 'constraints'
+      | 'assumptions'
+      | 'warnings'
+      // Sprint 1.3: a revision regenerated from a newer Graph must record that
+      // Graph, or staleness would be computed against a provenance that lies.
+      | 'sourceGeometry'
+      | 'contributedBy'
     >
   >
 ): GeometrySpecification {
@@ -237,9 +247,7 @@ export function reviseGeometrySpecification(
 }
 
 /** A specification with at least one space and one wall. An empty one is never offered. */
-export function isGeometrySpecificationComplete(
-  specification: GeometrySpecification
-): boolean {
+export function isGeometrySpecificationComplete(specification: GeometrySpecification): boolean {
   return specification.spaces.length > 0 && specification.walls.length > 0;
 }
 
@@ -267,10 +275,7 @@ function major(version: string): string {
 }
 
 /** The total floor area of one storey, measured across the finished faces. */
-export function storeyFloorArea(
-  specification: GeometrySpecification,
-  storey: number
-): number {
+export function storeyFloorArea(specification: GeometrySpecification, storey: number): number {
   return specification.spaces
     .filter((space) => space.storey === storey)
     .reduce((total, space) => total + space.area, 0);

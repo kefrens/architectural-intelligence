@@ -278,6 +278,57 @@ describe('architectural-intelligence reasons but never executes', () => {
     });
   });
 
+  /**
+   * ADR-AI-0002 Rule 1, asserted (Sprint 1.2, Story 1.2.19).
+   *
+   * The workflow state is a **projection**, and the single most attractive
+   * change to it is to keep one around — a field on the service, a module-level
+   * memo, a copy handed to the host at composition time. Each would be a stored
+   * verdict about which revision is current, which goes stale the instant a
+   * revision lands, and which a UI would trust anyway.
+   *
+   * Behavioural tests cannot catch this: a cached projection returns the right
+   * answer for every test that builds its project up front, and the wrong one
+   * for the user who revised a brief an hour into a session.
+   */
+  describe('the workflow state is derived, never stored', () => {
+    it('is held in no field, module-level or otherwise', () => {
+      for (const file of sources) {
+        expect(code(file.source)).not.toMatch(
+          /(?:private|protected|public|readonly|let|var)\s+\w+\s*:\s*ArchitecturalWorkflowState/
+        );
+      }
+    });
+
+    it('is never assigned to an instance or module binding', () => {
+      for (const file of sources) {
+        expect(code(file.source)).not.toMatch(
+          /(?:this\.\w+|^\s*\w+)\s*=\s*(?:this\.)?(?:workflowState|deriveWorkflowState)\s*\(/m
+        );
+      }
+    });
+
+    /**
+     * Sprint 1.4. The context fragment is the projection's second consumer and
+     * the more tempting one to cache: it is collected on every turn, and a
+     * fragment held between turns would report a design state the user has since
+     * changed — to a *model*, which has no way to tell.
+     */
+    it('is not cached on its way into the context fragment', () => {
+      for (const file of sources) {
+        expect(code(file.source)).not.toMatch(/(?:this\.\w+|^\s*\w+)\s*=\s*describeDesign\s*\(/m);
+        // Class fields and module bindings only — no bare `readonly`, because
+        // `ArchitecturalContextFragment` legitimately declares one as an
+        // interface member. The fragment *is* the per-turn value; holding one
+        // between turns is the thing being forbidden, and that needs a class
+        // field or a module binding to do.
+        expect(code(file.source)).not.toMatch(
+          /(?:private|protected|public|let|var)\s+(?:readonly\s+)?\w+\s*:\s*ArchitecturalDesignState/
+        );
+      }
+    });
+  });
+
   it('declares no runtime dependency outside its permitted layer', () => {
     const manifest = JSON.parse(readFileSync(join(SRC_DIR, '..', 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;

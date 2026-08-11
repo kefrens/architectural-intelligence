@@ -237,28 +237,37 @@ export function createCaptureBriefToolDefinition(
       const objectives = asStrings(args['objectives']);
       const spaces = asSpaces(args['spaces']);
 
-      // The utterance the brief quotes back. The conversation fragment is the
-      // closest thing this tool has to the user's own words — the model's
-      // arguments are a reading of them, not the words themselves.
-      const utterance =
-        objectives[0] ??
-        (context['conversation'] as { readonly lastUserMessage?: string } | undefined)
-          ?.lastUserMessage ??
-        'A design request';
+      // The user's own words. The model's arguments are a *reading* of them, and
+      // Bug 003 is what the difference costs: a `totalArea` the model did not
+      // pass is gone unless something re-reads the sentence it came from.
+      const userMessage = (
+        context['conversation'] as { readonly lastUserMessage?: string } | undefined
+      )?.lastUserMessage;
+
+      // The utterance the brief quotes back. Still the model's objective first —
+      // it is a summary of the whole conversation, where `userMessage` is only
+      // the last turn of it, and a Brief that quotes "yes please" quotes nothing.
+      const utterance = objectives[0] ?? userMessage ?? 'A design request';
 
       // Story 1.5.2. A project that already holds a Brief gets a *revision* of
       // it, never a second one. Reading it back is the whole reason this tool
       // became service-bound.
       const approved = intelligence.approvedBrief();
       if (approved !== undefined) {
-        return reviseApproved(approved, { objectives, spaces, requirements });
+        return reviseApproved(approved, {
+          objectives,
+          spaces,
+          requirements,
+          ...(userMessage === undefined ? {} : { userMessage })
+        });
       }
 
       const brief = assembleBriefFromFields({
         utterance,
         objectives,
         spaces,
-        requirements
+        requirements,
+        ...(userMessage === undefined ? {} : { userMessage })
       });
 
       // An incomplete Brief is not an error and not a proposal: it is a question.
@@ -292,11 +301,14 @@ function reviseApproved(
       readonly value: string | number | boolean;
       readonly statement: string;
     }[];
+    /** The user's own words, re-read for the topics the model omitted (Bug 003). */
+    readonly userMessage?: string;
   }
 ): ResolvedToolCall {
   const revised = reviseBriefFromFields(approved, {
     requirements: fields.requirements,
-    spaces: fields.spaces
+    spaces: fields.spaces,
+    ...(fields.userMessage === undefined ? {} : { userMessage: fields.userMessage })
   });
 
   if (revised === undefined) {

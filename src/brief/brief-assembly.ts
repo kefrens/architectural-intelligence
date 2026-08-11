@@ -78,6 +78,74 @@ const DEFAULTED_TOPICS: readonly {
   }
 ];
 
+/**
+ * Topics the deterministic reader may supply when a caller left them out
+ * (Bug 003).
+ *
+ * `assembleBriefFromFields` built requirements from the tool call and nothing
+ * else, so a topic the model did not pass simply did not exist. "Build me a
+ * 100m2 appartment" produced a Brief with no total area, and the Space Programme
+ * — correctly, and uselessly — reported that no total was stated and sized the
+ * dwelling from its own table. The number was in the sentence the whole time;
+ * {@link readBriefTopics} finds it, and only the model path never asked.
+ *
+ * ## Why a subset, and why these four
+ *
+ * The reader is deliberately permissive — `Budget` matches a bare currency
+ * amount, `Garage` matches the word in any clause including one that was not
+ * about this building. Filling a gap from a loose pattern is a worse failure
+ * than leaving it open, because an invented requirement is not visibly missing.
+ *
+ * These four are the ones whose patterns demand an explicit number next to an
+ * explicit noun, and they are also the four a Programme cannot be honest
+ * without. Everything else stays the model's job, and stays absent when the
+ * model omits it.
+ *
+ * The backstop only ever *fills*. A topic the caller supplied is the caller's,
+ * whatever the sentence says — the model read the whole conversation and this
+ * reads one message.
+ */
+const BACKSTOP_TOPICS: readonly string[] = [
+  BRIEF_TOPICS.TotalArea,
+  BRIEF_TOPICS.Storeys,
+  BRIEF_TOPICS.Bedrooms,
+  BRIEF_TOPICS.Bathrooms
+];
+
+/** The loose requirement shape both field-taking entry points accept. */
+interface SuppliedRequirement {
+  readonly topic: string;
+  readonly value: string | number | boolean;
+  readonly statement?: string;
+  readonly source?: BriefRequirementSource;
+}
+
+/**
+ * Completes a caller's reading of the user's message with the topics
+ * {@link BACKSTOP_TOPICS} allows and the caller did not state.
+ *
+ * Applied to what the *caller supplied*, before any folding, so everything
+ * downstream — defaults, revision, change detection — behaves exactly as it does
+ * for a caller who passed the topic itself. That is what keeps the two paths
+ * {@link assembleBrief} and {@link assembleBriefFromFields} in agreement, which
+ * this module's header has claimed since Sprint 27.8.
+ */
+function withBackstopTopics(
+  supplied: readonly SuppliedRequirement[],
+  userMessage: string | undefined
+): readonly SuppliedRequirement[] {
+  if (userMessage === undefined || userMessage.trim().length === 0) {
+    return supplied;
+  }
+
+  const stated = new Set(supplied.map((requirement) => requirement.topic));
+  const filled = readBriefTopics(userMessage).filter(
+    (requirement) => BACKSTOP_TOPICS.includes(requirement.topic) && !stated.has(requirement.topic)
+  );
+
+  return filled.length === 0 ? supplied : [...supplied, ...filled];
+}
+
 /** Applies every default the requirements do not already cover. */
 function withDefaults(requirements: readonly BriefRequirement[]): {
   readonly requirements: readonly BriefRequirement[];
@@ -247,17 +315,19 @@ export function reviseBriefFromFields(
   fields: {
     readonly utterance?: string;
     /** The same loose shape {@link assembleBriefFromFields} accepts, so both readers agree. */
-    readonly requirements?: readonly {
-      readonly topic: string;
-      readonly value: string | number | boolean;
-      readonly statement?: string;
-      readonly source?: BriefRequirementSource;
-    }[];
+    readonly requirements?: readonly SuppliedRequirement[];
     readonly spaces?: readonly DesiredSpace[];
+    /**
+     * The user's own words, for {@link withBackstopTopics} (Bug 003). Distinct
+     * from `utterance`, which is what the Brief quotes back: a caller may have a
+     * message to re-read without having a sentence worth replacing the Brief's
+     * own with.
+     */
+    readonly userMessage?: string;
   }
 ): ArchitecturalBrief | undefined {
   let requirements = approved.requirements;
-  for (const supplied of fields.requirements ?? []) {
+  for (const supplied of withBackstopTopics(fields.requirements ?? [], fields.userMessage)) {
     requirements = withRequirement(requirements, {
       topic: supplied.topic,
       value: supplied.value,
@@ -388,6 +458,34 @@ function bareAnswerFor(topic: string, answer: string): BriefRequirement | undefi
 }
 
 /**
+ * The spaces a bedroom or bathroom *count* names, for a caller that listed
+ * neither (Bug 003).
+ *
+ * `planning_captureBrief` exposes bedrooms and bathrooms as dedicated numeric
+ * arguments *and* accepts a `spaces` array, so a model that passes
+ * `bedrooms: 3` and lists only the kitchen has answered the question it was
+ * asked. Before this, that Brief carried one desired space, and the Space
+ * Programme built a three-bedroom house with no bedrooms in it — the count was
+ * in `requirements` where nothing downstream reads it as a space.
+ *
+ * The offline path never had this gap: `assembleBrief` runs `desiredSpacesFrom`
+ * over the utterance, which derives exactly these two from the counts. Passing
+ * an empty text reuses that derivation and *only* that — re-reading the space
+ * names would let `NAMED_SPACES` match inside a compound the user chose, turning
+ * "dining/lounge" into a second, separate living room.
+ */
+function withCountedSpaces(
+  supplied: readonly DesiredSpace[],
+  requirements: readonly BriefRequirement[]
+): readonly DesiredSpace[] {
+  const has = (name: string): boolean =>
+    supplied.some((space) => space.name.trim().toLowerCase().replace(/s$/, '') === name);
+
+  const counted = desiredSpacesFrom('', requirements).filter((space) => !has(space.name));
+  return counted.length === 0 ? supplied : [...supplied, ...counted];
+}
+
+/**
  * The spaces a completed draft implies, now that its counts are known.
  *
  * Recomputed from the final requirements rather than accumulated turn by turn,
@@ -417,20 +515,18 @@ export function assembleBriefFromFields(fields: {
   readonly utterance: string;
   readonly objectives?: readonly string[];
   readonly spaces?: readonly DesiredSpace[];
-  readonly requirements?: readonly {
-    readonly topic: string;
-    readonly value: string | number | boolean;
-    readonly statement?: string;
-  }[];
+  readonly requirements?: readonly SuppliedRequirement[];
+  /** The user's own words, for {@link withBackstopTopics} (Bug 003). */
+  readonly userMessage?: string;
   readonly now?: number;
 }): ArchitecturalBrief {
   let requirements: readonly BriefRequirement[] = [];
-  for (const supplied of fields.requirements ?? []) {
+  for (const supplied of withBackstopTopics(fields.requirements ?? [], fields.userMessage)) {
     requirements = withRequirement(requirements, {
       topic: supplied.topic,
       value: supplied.value,
       statement: supplied.statement ?? `${supplied.topic}: ${String(supplied.value)}`,
-      source: BRIEF_REQUIREMENT_SOURCES.Stated
+      source: supplied.source ?? BRIEF_REQUIREMENT_SOURCES.Stated
     });
   }
 
@@ -447,7 +543,7 @@ export function assembleBriefFromFields(fields: {
       fields.objectives !== undefined && fields.objectives.length > 0
         ? fields.objectives
         : [objectiveFrom(fields.utterance)],
-    desiredSpaces: fields.spaces ?? [],
+    desiredSpaces: withCountedSpaces(fields.spaces ?? [], finished?.requirements ?? requirements),
     requirements: finished?.requirements ?? requirements,
     assumptions: finished?.assumptions ?? [],
     openQuestions,

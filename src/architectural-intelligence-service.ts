@@ -115,6 +115,7 @@ import {
 import {
   describeProgramme,
   reviseProgramme,
+  withPreviousSpaceIds,
   SPACE_PROGRAMME_KIND,
   synthesizeProgramme,
   toProgrammeProposal,
@@ -145,6 +146,7 @@ import {
   type GeometryGraph,
   type GeometrySpecification
 } from './geometry/index.js';
+import { changesAnything, nothingToRegenerate } from './artefacts/artefact-revision.js';
 import { PLANNING_STAGES, type PlanningStage } from './planning/planning-stage.js';
 import {
   type ApprovedArtefact,
@@ -490,21 +492,25 @@ export class ArchitecturalIntelligenceService {
 
     // Story 1.3.7 — revision, not replacement. See `generateProgramme`.
     const previousGraph = this.approvedGeometry();
+    const patch = {
+      polygons: enriched.polygons,
+      wallCandidates: enriched.wallCandidates,
+      openingCandidates: enriched.openingCandidates,
+      adjacencies: enriched.adjacencies,
+      assumptions: enriched.assumptions,
+      warnings: enriched.warnings,
+      sourceLayout: enriched.sourceLayout,
+      ...(enriched.contributedBy === undefined ? {} : { contributedBy: enriched.contributedBy })
+    };
+
+    // Bug 005.
+    if (previousGraph !== undefined && !changesAnything(previousGraph, patch)) {
+      const blocker = nothingToRegenerate({ stage: 'geometry', nextStage: 'specification' });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
     const geometry =
-      previousGraph === undefined
-        ? enriched
-        : reviseGeometryGraph(previousGraph, {
-            polygons: enriched.polygons,
-            wallCandidates: enriched.wallCandidates,
-            openingCandidates: enriched.openingCandidates,
-            adjacencies: enriched.adjacencies,
-            assumptions: enriched.assumptions,
-            warnings: enriched.warnings,
-            sourceLayout: enriched.sourceLayout,
-            ...(enriched.contributedBy === undefined
-              ? {}
-              : { contributedBy: enriched.contributedBy })
-          });
+      previousGraph === undefined ? enriched : reviseGeometryGraph(previousGraph, patch);
 
     const gate = gateGeometryGraph(geometry, layout);
     if (!gate.ok) {
@@ -579,22 +585,27 @@ export class ArchitecturalIntelligenceService {
     );
 
     const previous = this.approvedSpecification();
+    const patch = {
+      storeys: enriched.storeys,
+      spaces: enriched.spaces,
+      walls: enriched.walls,
+      openings: enriched.openings,
+      constraints: enriched.constraints,
+      assumptions: enriched.assumptions,
+      warnings: enriched.warnings,
+      sourceGeometry: enriched.sourceGeometry,
+      ...(enriched.contributedBy === undefined ? {} : { contributedBy: enriched.contributedBy })
+    };
+
+    // Bug 005. The last stage, so there is nowhere to send the user next — the
+    // suggestion says what would make a revision meaningful instead.
+    if (previous !== undefined && !changesAnything(previous, patch)) {
+      const blocker = nothingToRegenerate({ stage: 'specification' });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
     const specification =
-      previous === undefined
-        ? enriched
-        : reviseGeometrySpecification(previous, {
-            storeys: enriched.storeys,
-            spaces: enriched.spaces,
-            walls: enriched.walls,
-            openings: enriched.openings,
-            constraints: enriched.constraints,
-            assumptions: enriched.assumptions,
-            warnings: enriched.warnings,
-            sourceGeometry: enriched.sourceGeometry,
-            ...(enriched.contributedBy === undefined
-              ? {}
-              : { contributedBy: enriched.contributedBy })
-          });
+      previous === undefined ? enriched : reviseGeometrySpecification(previous, patch);
 
     const gate = gateGeometrySpecification(specification, graph);
     if (!gate.ok) {
@@ -640,21 +651,35 @@ export class ArchitecturalIntelligenceService {
 
     // Story 1.3.7 — revision, not replacement. See `generateProgramme`.
     const previous = this.approvedLayout();
-    const layout =
-      previous === undefined
-        ? enriched
-        : reviseLayoutPlan(previous, {
-            spaces: enriched.spaces,
-            graph: enriched.graph,
-            adjacencies: enriched.adjacencies,
-            circulation: enriched.circulation,
-            assumptions: enriched.assumptions,
-            warnings: enriched.warnings,
-            sourceProgramme: enriched.sourceProgramme,
-            ...(enriched.contributedBy === undefined
-              ? {}
-              : { contributedBy: enriched.contributedBy })
-          });
+    if (previous === undefined) {
+      return {
+        intent,
+        message: describeLayout(enriched),
+        proposal: toLayoutProposal(enriched),
+        layout: enriched
+      };
+    }
+
+    const patch = {
+      spaces: enriched.spaces,
+      graph: enriched.graph,
+      adjacencies: enriched.adjacencies,
+      circulation: enriched.circulation,
+      assumptions: enriched.assumptions,
+      warnings: enriched.warnings,
+      sourceProgramme: enriched.sourceProgramme,
+      ...(enriched.contributedBy === undefined ? {} : { contributedBy: enriched.contributedBy })
+    };
+
+    // Bug 005. Layout node ids are programme space ids, so they are already
+    // stable when the programme's are — which is the other half of what
+    // `withPreviousSpaceIds` buys.
+    if (!changesAnything(previous, patch)) {
+      const blocker = nothingToRegenerate({ stage: 'layout', nextStage: 'geometry' });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    const layout = reviseLayoutPlan(previous, patch);
 
     return {
       intent,
@@ -702,20 +727,39 @@ export class ArchitecturalIntelligenceService {
     // force. Minting a second programme instead would split the lineage, and a
     // project holding two programmes cannot say which one it meant.
     const previous = this.approvedProgramme();
-    const programme =
-      previous === undefined
-        ? enriched
-        : reviseProgramme(previous, {
-            spaces: enriched.spaces,
-            adjacencies: enriched.adjacencies,
-            totalArea: enriched.totalArea,
-            assumptions: enriched.assumptions,
-            warnings: enriched.warnings,
-            sourceBrief: enriched.sourceBrief,
-            ...(enriched.contributedBy === undefined
-              ? {}
-              : { contributedBy: enriched.contributedBy })
-          });
+    if (previous === undefined) {
+      return {
+        intent,
+        message: describeProgramme(enriched),
+        proposal: toProgrammeProposal(enriched),
+        programme: enriched
+      };
+    }
+
+    // Bug 005. Ids are reconciled *before* the patch is built, so a regeneration
+    // that changed nothing produces a patch equal to what the project already
+    // holds — and so that a Layout built on this programme keeps pointing at
+    // spaces that still exist.
+    const stable = withPreviousSpaceIds(enriched, previous);
+    const patch = {
+      spaces: stable.spaces,
+      adjacencies: stable.adjacencies,
+      totalArea: stable.totalArea,
+      assumptions: stable.assumptions,
+      warnings: stable.warnings,
+      sourceBrief: stable.sourceBrief,
+      ...(stable.contributedBy === undefined ? {} : { contributedBy: stable.contributedBy })
+    };
+
+    if (!changesAnything(previous, patch)) {
+      const blocker = nothingToRegenerate({
+        stage: 'space programme',
+        nextStage: 'layout'
+      });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    const programme = reviseProgramme(previous, patch);
 
     return {
       intent,

@@ -191,6 +191,10 @@ topological: a relationship never carries a distance, which would be geometry in
 the artefact furthest from it. They name spaces rather than identifying them,
 because `DesiredSpace` has no id and gains none.
 
+A mandatory topic counts as answered only when its value means something: a
+count below its minimum leaves the topic absent so the host asks, rather than
+recording "0 storeys" as a settled requirement (Bug 006).
+
 Assembled by the host from resolved tool calls and typed data
 ([brief-assembly.ts](../../src/brief/brief-assembly.ts)) — never parsed out of
 model prose. Both capture paths agree: whatever the model leaves out of a tool
@@ -206,6 +210,12 @@ Which spaces exist, what each is for, what matters most, and what should be near
 what. Priorities are `required` / `expected` / `optional`; zones are `day` /
 `night` / `service` / `circulation`; adjacency strength is `required` /
 `preferred` / `avoid`.
+
+A regeneration that changes nothing is **refused** rather than superseding
+itself (Bug 005): all four stages compare the patch they would apply against the
+artefact in force and answer `NothingToDo` when it is equal. Space ids survive a
+revision, because a Layout Plan's nodes _are_ programme space ids and minting new
+ones left every downstream artefact dangling.
 
 Every intended adjacency records **who said it**, in the Brief's own
 `stated` / `answered` / `assumed` vocabulary. A relationship the user stated is

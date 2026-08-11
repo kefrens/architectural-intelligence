@@ -314,6 +314,10 @@ describe('regeneration is revision (Story 1.3.7)', () => {
     const project = projectWithLayout();
     const first = stage(project.service.workflowState(), PLANNING_STAGES.Programme).approved!;
 
+    // Something has to actually change for a revision to be meaningful — before
+    // Bug 005 this test regenerated an identical programme and still expected
+    // revision 2, which is precisely the churn that starved the pipeline.
+    project.approve(project.service.interpret('actually make it 4 bedrooms').proposal);
     project.approve(project.service.interpret('now generate the space programme').proposal);
     const second = stage(project.service.workflowState(), PLANNING_STAGES.Programme).approved!;
 

@@ -135,18 +135,54 @@ interface SuppliedRequirement {
  */
 function withBackstopTopics(
   supplied: readonly SuppliedRequirement[],
-  userMessage: string | undefined
+  texts: readonly (string | undefined)[]
 ): readonly SuppliedRequirement[] {
-  if (userMessage === undefined || userMessage.trim().length === 0) {
-    return supplied;
+  const stated = new Set(supplied.map((requirement) => requirement.topic));
+  const filled: SuppliedRequirement[] = [];
+
+  for (const text of texts) {
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    for (const requirement of readBriefTopics(text)) {
+      if (!BACKSTOP_TOPICS.includes(requirement.topic) || stated.has(requirement.topic)) {
+        continue;
+      }
+      stated.add(requirement.topic);
+      filled.push(requirement);
+    }
   }
 
-  const stated = new Set(supplied.map((requirement) => requirement.topic));
-  const filled = readBriefTopics(userMessage).filter(
-    (requirement) => BACKSTOP_TOPICS.includes(requirement.topic) && !stated.has(requirement.topic)
-  );
-
   return filled.length === 0 ? supplied : [...supplied, ...filled];
+}
+
+/**
+ * Every text the backstop may read, in precedence order (Bug 005).
+ *
+ * The user's own message first, then the model's own words for this Brief.
+ *
+ * Reading the model's words back is not redundant, and the conversation that
+ * exposed Bug 005 is why. The first `planning_captureBrief` omitted `storeys`,
+ * so the host asked; the user answered **"single storey"**; the model called the
+ * tool again. At that moment `userMessage` was "single storey" — the 100 m² was
+ * two turns behind, and a backstop reading only the latest message recovers
+ * nothing.
+ *
+ * What *did* still carry it was the model's own objective, inside the same tool
+ * call: "design a 100m2 apartment with 2 bedrooms, 1 bathroom, and a small
+ * office". A model that read the requirement well enough to paraphrase it and
+ * then failed to put it in a numeric argument has still told us the number.
+ *
+ * `BACKSTOP_TOPICS` is what makes reading a paraphrase safe: those four patterns
+ * need an explicit number beside an explicit noun, so a restatement either
+ * contains the figure or matches nothing.
+ */
+function backstopTexts(fields: {
+  readonly userMessage?: string;
+  readonly utterance?: string;
+  readonly objectives?: readonly string[];
+}): readonly (string | undefined)[] {
+  return [fields.userMessage, fields.utterance, ...(fields.objectives ?? [])];
 }
 
 /**
@@ -160,11 +196,14 @@ function withBackstopTopics(
 function mergedRelationships(
   existing: readonly SpaceRelationship[],
   supplied: readonly SpaceRelationship[],
-  userMessage: string | undefined
+  texts: readonly (string | undefined)[]
 ): readonly SpaceRelationship[] {
   let result = existing;
-  if (userMessage !== undefined && userMessage.trim().length > 0) {
-    for (const read of readSpaceRelationships(userMessage)) {
+  for (const text of texts) {
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    for (const read of readSpaceRelationships(text)) {
       result = withRelationship(result, read);
     }
   }
@@ -348,6 +387,8 @@ export function reviseBriefFromFields(
     readonly requirements?: readonly SuppliedRequirement[];
     readonly spaces?: readonly DesiredSpace[];
     readonly relationships?: readonly SpaceRelationship[];
+    /** The model's own words for this Brief, also read by the backstop (Bug 005). */
+    readonly objectives?: readonly string[];
     /**
      * The user's own words, for {@link withBackstopTopics} (Bug 003). Distinct
      * from `utterance`, which is what the Brief quotes back: a caller may have a
@@ -358,7 +399,7 @@ export function reviseBriefFromFields(
   }
 ): ArchitecturalBrief | undefined {
   let requirements = approved.requirements;
-  for (const supplied of withBackstopTopics(fields.requirements ?? [], fields.userMessage)) {
+  for (const supplied of withBackstopTopics(fields.requirements ?? [], backstopTexts(fields))) {
     requirements = withRequirement(requirements, {
       topic: supplied.topic,
       value: supplied.value,
@@ -388,7 +429,7 @@ export function reviseBriefFromFields(
   const relationships = mergedRelationships(
     approved.relationships,
     fields.relationships ?? [],
-    fields.userMessage
+    backstopTexts(fields)
   );
 
   if (
@@ -486,7 +527,7 @@ export function answerClarification(draft: ArchitecturalBrief, answer: string): 
     // A user answering "how many bathrooms?" may say more than was asked, and a
     // relationship stated in that answer is as explicit as one in the first
     // sentence (Bug 004, Rule 7).
-    relationships: mergedRelationships(draft.relationships, [], answer),
+    relationships: mergedRelationships(draft.relationships, [], [answer]),
     assumptions: [...draft.assumptions, ...complete.assumptions],
     desiredSpaces: mergeSpaces(draft.desiredSpaces, complete.requirements),
     openQuestions: []
@@ -499,7 +540,10 @@ function bareAnswerFor(topic: string, answer: string): BriefRequirement | undefi
 
   if (countable) {
     const count = readBareCount(answer);
-    if (count === undefined) {
+    // "none" answers a bathroom count; it does not answer a storey count, and a
+    // brief saying "0 storeys" is not a building (Bug 006). Left unanswered, the
+    // question is simply asked again.
+    if (count === undefined || (topic === BRIEF_TOPICS.Storeys && count < 1)) {
       return undefined;
     }
     const noun = topic === BRIEF_TOPICS.Storeys ? 'storey' : topic.replace(/s$/, '');
@@ -587,7 +631,7 @@ export function assembleBriefFromFields(fields: {
   readonly now?: number;
 }): ArchitecturalBrief {
   let requirements: readonly BriefRequirement[] = [];
-  for (const supplied of withBackstopTopics(fields.requirements ?? [], fields.userMessage)) {
+  for (const supplied of withBackstopTopics(fields.requirements ?? [], backstopTexts(fields))) {
     requirements = withRequirement(requirements, {
       topic: supplied.topic,
       value: supplied.value,
@@ -610,7 +654,7 @@ export function assembleBriefFromFields(fields: {
         ? fields.objectives
         : [objectiveFrom(fields.utterance)],
     desiredSpaces: withCountedSpaces(fields.spaces ?? [], finished?.requirements ?? requirements),
-    relationships: mergedRelationships([], fields.relationships ?? [], fields.userMessage),
+    relationships: mergedRelationships([], fields.relationships ?? [], backstopTexts(fields)),
     requirements: finished?.requirements ?? requirements,
     assumptions: finished?.assumptions ?? [],
     openQuestions,

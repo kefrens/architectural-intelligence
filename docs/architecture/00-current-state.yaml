@@ -209,6 +209,10 @@ artefacts:
       neverOwns: [areas, coordinates, geometry, distances]
       topics:
         [storeys, bedrooms, bathrooms, garage, office, accessibility, style, budget, totalArea]
+      topicMinimums:
+        sprint: bug-006
+        storeys: 1
+        note: 'a count below its minimum leaves the topic absent, so the host asks rather than recording "0 storeys"'
       relationships:
         sprint: bug-004
         type: SpaceRelationship
@@ -230,6 +234,11 @@ artefacts:
         adjacencyStrengths: [required, preferred, avoid]
         adjacencySources: [stated, answered, assumed]
       synthesizedBy: src/programme/programme-synthesis.ts
+      regeneration:
+        sprint: bug-005
+        rule: 'a regeneration whose patch equals the artefact in force answers NothingToDo rather than superseding it'
+        identity: 'withPreviousSpaceIds re-uses approved space ids by name, so downstream artefacts keep pointing at spaces that exist'
+        appliesTo: [space-programme, layout-plan, geometry-graph, geometry-specification]
       provenance: { field: sourceBrief, type: BriefProvenance, staleCheck: matchesBrief }
     - kind: layout-plan
       type: LayoutPlan

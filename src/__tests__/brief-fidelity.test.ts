@@ -17,7 +17,14 @@
 
 import { describe, expect, it } from 'vitest';
 import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
-import { ARCHITECTURAL_BRIEF_KIND, BRIEF_TOPICS, type ArchitecturalBrief } from '../brief/index.js';
+import {
+  answerClarification,
+  ARCHITECTURAL_BRIEF_KIND,
+  BRIEF_TOPICS,
+  classifyRequest,
+  startBriefDraft,
+  type ArchitecturalBrief
+} from '../brief/index.js';
 import { synthesizeProgramme } from '../programme/index.js';
 import { createCaptureBriefToolDefinition } from '../tools/index.js';
 import { createHarness } from './harness.js';
@@ -54,11 +61,11 @@ function service(): ArchitecturalIntelligenceService {
 /** Captures a Brief the way a provider does, and returns the artefact proposed. */
 function capture(
   fields: Readonly<Record<string, unknown>>,
-  context: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
-    conversation: { lastUserMessage: REQUEST }
-  }
+  lastUserMessage: string = REQUEST
 ): ArchitecturalBrief {
-  const resolved = createCaptureBriefToolDefinition(service()).resolve(fields, context);
+  const resolved = createCaptureBriefToolDefinition(service()).resolve(fields, {
+    conversation: { lastUserMessage }
+  });
   if (resolved?.kind !== 'proposal') {
     throw new Error(
       `Expected a brief proposal, got ${resolved?.kind ?? 'nothing'}${
@@ -101,8 +108,20 @@ describe('a topic the model omitted (Bug 003)', () => {
     ).toBe(3);
   });
 
-  it('fills nothing when there is no user message to re-read', () => {
-    const brief = capture(FIELDS, {});
+  it('reads the model’s own objective when the user message no longer carries it (Bug 005)', () => {
+    // The conversation that exposed Bug 005: the first capture omitted
+    // `storeys`, the host asked, the user answered "single storey", and the
+    // model called again. The 100 m² was two turns behind by then — but the
+    // model's own objective still said it.
+    const brief = capture(FIELDS, 'single storey');
+
+    expect(
+      brief.requirements.find((requirement) => requirement.topic === BRIEF_TOPICS.TotalArea)?.value
+    ).toBe(100);
+  });
+
+  it('fills nothing when nothing readable is available at all', () => {
+    const brief = capture({ ...FIELDS, objectives: ['A place to live'] }, 'that sounds good to me');
 
     expect(
       brief.requirements.some((requirement) => requirement.topic === BRIEF_TOPICS.TotalArea)
@@ -113,12 +132,72 @@ describe('a topic the model omitted (Bug 003)', () => {
     // `Budget` matches a currency amount anywhere in a sentence, which is too
     // permissive to fill a gap with. An invented requirement is worse than a
     // missing one, because it is not visibly missing.
-    const brief = capture(FIELDS, {
-      conversation: { lastUserMessage: 'A 100m2 flat near the €500 000 place on the corner' }
-    });
+    const brief = capture(FIELDS, 'A 100m2 flat near the €500 000 place on the corner');
 
     expect(
       brief.requirements.some((requirement) => requirement.topic === BRIEF_TOPICS.Budget)
+    ).toBe(false);
+  });
+});
+
+describe('a count whose value means nothing (Bug 006)', () => {
+  /** Resolves without insisting on a proposal, so a blocker can be inspected. */
+  function resolve(fields: Readonly<Record<string, unknown>>) {
+    return createCaptureBriefToolDefinition(service()).resolve(fields, {
+      conversation: { lastUserMessage: REQUEST }
+    });
+  }
+
+  it('does not accept zero storeys as an answer', () => {
+    // The reported Brief said "0 storeys" and was offered for approval: the
+    // mandatory-topic check asked whether `storeys` was present, not whether its
+    // value meant anything. `synthesizeProgramme` then coerced it back to 1, so
+    // nothing downstream ever noticed.
+    const resolved = resolve({ ...FIELDS, storeys: 0 });
+
+    expect(resolved?.kind).toBe('blocked');
+  });
+
+  it('asks the storey question rather than guessing that they meant one', () => {
+    const resolved = resolve({ ...FIELDS, storeys: 0 });
+
+    expect(resolved?.kind === 'blocked' && resolved.message).toContain('How many storeys');
+  });
+
+  it('accepts a single storey, which is the smallest building there is', () => {
+    expect(resolve({ ...FIELDS, storeys: 1 })?.kind).toBe('proposal');
+  });
+
+  it('still accepts zero bedrooms, because a studio has none', () => {
+    // The minimum is per topic, not a blanket "counts must be positive": zero is
+    // a real answer here and only meaningless for storeys.
+    const brief = capture(
+      {
+        objectives: ['A studio flat'],
+        spaces: [{ name: 'kitchen', count: 1 }],
+        storeys: 1,
+        bedrooms: 0,
+        bathrooms: 1
+      },
+      'A studio flat with no separate bedroom'
+    );
+
+    expect(
+      brief.requirements.find((requirement) => requirement.topic === BRIEF_TOPICS.Bedrooms)?.value
+    ).toBe(0);
+    expect(brief.desiredSpaces.some((space) => space.name === 'bedroom')).toBe(false);
+  });
+
+  it('re-asks when the storey question is answered with "none"', () => {
+    const utterance = 'Design me a house with 3 bedrooms and 2 bathrooms';
+    const draft = startBriefDraft({ utterance, classification: classifyRequest(utterance) });
+    expect(draft.openQuestions).toContain(BRIEF_TOPICS.Storeys);
+
+    const answered = answerClarification(draft, 'none');
+
+    expect(answered.openQuestions).toContain(BRIEF_TOPICS.Storeys);
+    expect(
+      answered.requirements.some((requirement) => requirement.topic === BRIEF_TOPICS.Storeys)
     ).toBe(false);
   });
 });
@@ -243,11 +322,7 @@ describe('boundary cases (Bug 003)', () => {
         bedrooms,
         bathrooms
       },
-      {
-        conversation: {
-          lastUserMessage: `Design a ${area}m2 home with ${bedrooms} bedrooms and ${bathrooms} bathrooms`
-        }
-      }
+      `Design a ${area}m2 home with ${bedrooms} bedrooms and ${bathrooms} bathrooms`
     );
 
     const result = synthesizeProgramme({ brief });

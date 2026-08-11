@@ -263,6 +263,64 @@ export function programmeSpace(
   return programme.spaces.find((space) => space.id === spaceId);
 }
 
+/**
+ * Re-uses the approved programme's space ids for the spaces a regeneration
+ * produced again (Bug 005).
+ *
+ * `synthesizeProgramme` mints a fresh uuid for every space on every call, so
+ * revision *n+1* of an otherwise identical programme shared not one id with
+ * revision *n*. Two things break because of that.
+ *
+ * The first is visible: nothing can tell whether a regeneration changed
+ * anything, because no two syntheses are ever equal. The churn Bug 005 is about
+ * could not be detected, only endured.
+ *
+ * The second is worse and was not reported. A Layout Plan's nodes **are**
+ * programme space ids (`layout-synthesis.ts`), as are a Geometry Graph's
+ * polygons through it. Re-approving a programme with new ids therefore left
+ * every downstream artefact pointing at spaces that no longer existed —
+ * detectable as staleness through `matchesProgramme`, but dangling in a way that
+ * staleness does not describe: not "derived from an older revision", simply
+ * *wrong*.
+ *
+ * Matched by name, one previous id per next space, because a name is what a
+ * programme space is identified by everywhere else in this layer — the implied
+ * space check and the adjacency roles both match on it. A space the brief no
+ * longer asks for takes its id out of circulation; a genuinely new one keeps the
+ * fresh uuid it was given.
+ */
+export function withPreviousSpaceIds(
+  next: SpaceProgramme,
+  previous: SpaceProgramme
+): SpaceProgramme {
+  const available = new Map<string, string[]>();
+  for (const space of previous.spaces) {
+    const key = space.name.trim().toLowerCase();
+    available.set(key, [...(available.get(key) ?? []), space.id]);
+  }
+
+  const reassigned = new Map<string, string>();
+  const spaces = next.spaces.map((space) => {
+    const queue = available.get(space.name.trim().toLowerCase());
+    const inherited = queue?.shift();
+    if (inherited === undefined) {
+      return space;
+    }
+    reassigned.set(space.id, inherited);
+    return { ...space, id: inherited };
+  });
+
+  // Adjacency carries space ids, so it has to move with them or it would name
+  // spaces this programme no longer contains.
+  const adjacencies = next.adjacencies.map((adjacency) => ({
+    ...adjacency,
+    fromSpaceId: reassigned.get(adjacency.fromSpaceId) ?? adjacency.fromSpaceId,
+    toSpaceId: reassigned.get(adjacency.toSpaceId) ?? adjacency.toSpaceId
+  }));
+
+  return { ...next, spaces, adjacencies };
+}
+
 /** A programme with at least one space. An empty one is never offered for approval. */
 export function isProgrammeComplete(programme: SpaceProgramme): boolean {
   return programme.spaces.length > 0;

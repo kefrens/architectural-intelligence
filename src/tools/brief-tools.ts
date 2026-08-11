@@ -48,11 +48,49 @@ import type { ArchitecturalIntelligenceService } from '../architectural-intellig
 import { PLANNING_STAGES } from '../planning/planning-stage.js';
 import { PLANNING_TOOL_NAMES } from './planning-tool-names.js';
 
-/** The numeric topics the schema exposes as first-class arguments. */
-const COUNT_ARGUMENTS: readonly (readonly [string, string, string])[] = [
-  [BRIEF_TOPICS.Storeys, 'storeys', 'How many storeys the building should have.'],
-  [BRIEF_TOPICS.Bedrooms, 'bedrooms', 'How many bedrooms are required.'],
-  [BRIEF_TOPICS.Bathrooms, 'bathrooms', 'How many bathrooms are required.']
+/**
+ * The numeric topics the schema exposes as first-class arguments.
+ *
+ * `minimum` is the smallest value that means anything, and it is why this is a
+ * record rather than a tuple (Bug 006). A model answered `storeys: 0`, the topic
+ * counted as answered because it was *present*, and a Brief claiming "0 storeys"
+ * was offered for approval. `synthesizeProgramme` then coerced it back to 1, so
+ * nothing downstream ever noticed — it took a transcript to see it.
+ *
+ * Zero is meaningful for the other two: a studio has no separate bedroom, and
+ * `desiredSpacesFrom` already declines to create a space for a count of zero.
+ * Only a building with no storeys is not a building — which is exactly the rule
+ * `readBriefTopics` has applied to the offline path since Sprint 27.8. This makes
+ * the tool agree with it.
+ *
+ * Below the minimum the topic is left **absent**, not corrected: an unanswered
+ * mandatory topic is a question the host asks, and guessing "they must have meant
+ * 1" would invent a requirement the user never gave.
+ */
+const COUNT_ARGUMENTS: readonly {
+  readonly topic: string;
+  readonly name: string;
+  readonly description: string;
+  readonly minimum: number;
+}[] = [
+  {
+    topic: BRIEF_TOPICS.Storeys,
+    name: 'storeys',
+    description: 'How many storeys the building should have. At least 1.',
+    minimum: 1
+  },
+  {
+    topic: BRIEF_TOPICS.Bedrooms,
+    name: 'bedrooms',
+    description: 'How many bedrooms are required.',
+    minimum: 0
+  },
+  {
+    topic: BRIEF_TOPICS.Bathrooms,
+    name: 'bathrooms',
+    description: 'How many bathrooms are required.',
+    minimum: 0
+  }
 ];
 
 /** The boolean topics. Absent means "not stated", which is not the same as `false`. */
@@ -194,9 +232,9 @@ export function createCaptureBriefToolDefinition(
               }
             },
             ...Object.fromEntries(
-              COUNT_ARGUMENTS.map(([, name, description]) => [
-                name,
-                { type: 'number', description }
+              COUNT_ARGUMENTS.map((argument) => [
+                argument.name,
+                { type: 'number', description: argument.description, minimum: argument.minimum }
               ])
             ),
             ...Object.fromEntries(
@@ -243,14 +281,16 @@ export function createCaptureBriefToolDefinition(
       const requirements: { topic: string; value: string | number | boolean; statement: string }[] =
         [];
 
-      for (const [topic, name] of COUNT_ARGUMENTS) {
-        const count = asFiniteNumber(args[name]);
-        if (count === undefined || count < 0) {
+      for (const argument of COUNT_ARGUMENTS) {
+        const count = asFiniteNumber(args[argument.name]);
+        // Below the minimum the topic stays absent, so the host asks (Bug 006).
+        if (count === undefined || count < argument.minimum) {
           continue;
         }
-        const noun = topic === BRIEF_TOPICS.Storeys ? 'storey' : topic.replace(/s$/, '');
+        const noun =
+          argument.topic === BRIEF_TOPICS.Storeys ? 'storey' : argument.topic.replace(/s$/, '');
         requirements.push({
-          topic,
+          topic: argument.topic,
           value: count,
           statement: count === 1 ? `1 ${noun}` : `${count} ${noun}s`
         });
@@ -368,6 +408,7 @@ function reviseApproved(
     requirements: fields.requirements,
     spaces: fields.spaces,
     relationships: fields.relationships,
+    objectives: fields.objectives,
     ...(fields.userMessage === undefined ? {} : { userMessage: fields.userMessage })
   });
 

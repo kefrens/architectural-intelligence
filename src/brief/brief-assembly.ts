@@ -29,17 +29,20 @@ import {
   BRIEF_TOPICS,
   createBrief,
   reviseBrief,
+  withRelationship,
   withRequirement,
   type ArchitecturalBrief,
   type BriefRequirement,
   type BriefRequirementSource,
-  type DesiredSpace
+  type DesiredSpace,
+  type SpaceRelationship
 } from './architectural-brief.js';
 import {
   desiredSpacesFrom,
   readBareBoolean,
   readBareCount,
-  readBriefTopics
+  readBriefTopics,
+  readSpaceRelationships
 } from './brief-topics.js';
 import { MANDATORY_BRIEF_TOPICS, type RequestClassification } from './request-classification.js';
 
@@ -146,6 +149,31 @@ function withBackstopTopics(
   return filled.length === 0 ? supplied : [...supplied, ...filled];
 }
 
+/**
+ * Relationships from a caller's fields, completed by what the sentence plainly
+ * says (Bug 004, ADR-AI-0003 Rule 7).
+ *
+ * The same asymmetry the topic backstop uses, and for the same reason: the
+ * deterministic reader goes in first and the caller's own relationships land on
+ * top, so a pair the model stated wins and a pair it missed is still captured.
+ */
+function mergedRelationships(
+  existing: readonly SpaceRelationship[],
+  supplied: readonly SpaceRelationship[],
+  userMessage: string | undefined
+): readonly SpaceRelationship[] {
+  let result = existing;
+  if (userMessage !== undefined && userMessage.trim().length > 0) {
+    for (const read of readSpaceRelationships(userMessage)) {
+      result = withRelationship(result, read);
+    }
+  }
+  for (const relationship of supplied) {
+    result = withRelationship(result, relationship);
+  }
+  return result;
+}
+
 /** Applies every default the requirements do not already cover. */
 function withDefaults(requirements: readonly BriefRequirement[]): {
   readonly requirements: readonly BriefRequirement[];
@@ -208,6 +236,7 @@ export function assembleBrief(options: AssembleBriefOptions): ArchitecturalBrief
     utterance: options.utterance,
     objectives: [objectiveFrom(options.utterance)],
     desiredSpaces: desiredSpacesFrom(options.utterance, requirements),
+    relationships: readSpaceRelationships(options.utterance),
     requirements,
     assumptions,
     openQuestions: [],
@@ -229,6 +258,7 @@ export function startBriefDraft(options: AssembleBriefOptions): ArchitecturalBri
     utterance: options.utterance,
     objectives: [objectiveFrom(options.utterance)],
     desiredSpaces: desiredSpacesFrom(options.utterance, stated),
+    relationships: readSpaceRelationships(options.utterance),
     requirements: stated,
     assumptions: [],
     openQuestions: options.classification.missing,
@@ -317,6 +347,7 @@ export function reviseBriefFromFields(
     /** The same loose shape {@link assembleBriefFromFields} accepts, so both readers agree. */
     readonly requirements?: readonly SuppliedRequirement[];
     readonly spaces?: readonly DesiredSpace[];
+    readonly relationships?: readonly SpaceRelationship[];
     /**
      * The user's own words, for {@link withBackstopTopics} (Bug 003). Distinct
      * from `utterance`, which is what the Brief quotes back: a caller may have a
@@ -352,14 +383,44 @@ export function reviseBriefFromFields(
       )
   );
 
-  if (!requirementsChanged(approved.requirements, requirements) && addedSpaces.length === 0) {
+  // A relationship the Brief did not already hold is the user telling us
+  // something new, exactly as a changed requirement is (Bug 004).
+  const relationships = mergedRelationships(
+    approved.relationships,
+    fields.relationships ?? [],
+    fields.userMessage
+  );
+
+  if (
+    !requirementsChanged(approved.requirements, requirements) &&
+    addedSpaces.length === 0 &&
+    !relationshipsChanged(approved.relationships, relationships)
+  ) {
     return undefined;
   }
 
   return reviseBrief(approved, {
     ...(fields.utterance === undefined ? {} : { utterance: fields.utterance }),
     requirements,
+    relationships,
     desiredSpaces: mergeSpaces([...approved.desiredSpaces, ...addedSpaces], requirements)
+  });
+}
+
+/** Whether any pair gained, lost or changed its kind. Sources are not compared. */
+function relationshipsChanged(
+  before: readonly SpaceRelationship[],
+  after: readonly SpaceRelationship[]
+): boolean {
+  if (before.length !== after.length) {
+    return true;
+  }
+  const key = (relationship: SpaceRelationship): string =>
+    [relationship.from.toLowerCase(), relationship.to.toLowerCase()].sort().join('|');
+
+  return after.some((relationship) => {
+    const previous = before.find((candidate) => key(candidate) === key(relationship));
+    return previous === undefined || previous.kind !== relationship.kind;
   });
 }
 
@@ -422,6 +483,10 @@ export function answerClarification(draft: ArchitecturalBrief, answer: string): 
   const complete = withDefaults(requirements);
   return reviseBrief(draft, {
     requirements: complete.requirements,
+    // A user answering "how many bathrooms?" may say more than was asked, and a
+    // relationship stated in that answer is as explicit as one in the first
+    // sentence (Bug 004, Rule 7).
+    relationships: mergedRelationships(draft.relationships, [], answer),
     assumptions: [...draft.assumptions, ...complete.assumptions],
     desiredSpaces: mergeSpaces(draft.desiredSpaces, complete.requirements),
     openQuestions: []
@@ -516,6 +581,7 @@ export function assembleBriefFromFields(fields: {
   readonly objectives?: readonly string[];
   readonly spaces?: readonly DesiredSpace[];
   readonly requirements?: readonly SuppliedRequirement[];
+  readonly relationships?: readonly SpaceRelationship[];
   /** The user's own words, for {@link withBackstopTopics} (Bug 003). */
   readonly userMessage?: string;
   readonly now?: number;
@@ -544,6 +610,7 @@ export function assembleBriefFromFields(fields: {
         ? fields.objectives
         : [objectiveFrom(fields.utterance)],
     desiredSpaces: withCountedSpaces(fields.spaces ?? [], finished?.requirements ?? requirements),
+    relationships: mergedRelationships([], fields.relationships ?? [], fields.userMessage),
     requirements: finished?.requirements ?? requirements,
     assumptions: finished?.assumptions ?? [],
     openQuestions,

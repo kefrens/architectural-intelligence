@@ -32,6 +32,13 @@
 
 import { createUuid } from '@archisimple/shared';
 import type { EnrichedArtefact } from '../artefacts/enriched-artefact.js';
+// Directly, not through the barrel: this is the first time the Programme
+// *artefact* names a Brief type, and the narrow path keeps it obvious that the
+// dependency is one enum and nothing else.
+import {
+  BRIEF_REQUIREMENT_SOURCES,
+  type BriefRequirementSource
+} from '../brief/architectural-brief.js';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
 export const SPACE_PROGRAMME_KIND = 'space-programme';
@@ -131,6 +138,23 @@ export interface IntendedAdjacency {
   readonly strength: AdjacencyStrength;
   /** Plain language, for the review card: "so the kitchen serves the dining room". */
   readonly reason: string;
+  /**
+   * Who said this (Bug 004, ADR-AI-0003 Rule 4).
+   *
+   * Reuses the Brief's `BriefRequirementSource` — `stated`, `answered`,
+   * `assumed` — rather than adding a fourth provenance vocabulary beside
+   * {@link AREA_SOURCES} and {@link SPACE_PRIORITIES}. It is the same question
+   * with the same three answers, and this artefact already derives priorities
+   * from that record.
+   *
+   * Without it the rule that matters cannot be stated: a relationship the user
+   * demanded and one `ADJACENCY_TEMPLATE` assumed are otherwise indistinguishable,
+   * and the review card presents a template's opinion in the user's own voice.
+   *
+   * Everything the platform derives is `assumed`, which is also the right value
+   * for a programme deserialised from a project file written before this existed.
+   */
+  readonly source: BriefRequirementSource;
 }
 
 /** The Brief this programme was derived from (Rules 4 and 12). */
@@ -287,17 +311,29 @@ export function summarizeProgramme(programme: SpaceProgramme): string {
 
   lines.push(`**Total** — ${programme.totalArea} m²`, '');
 
-  const stated = programme.adjacencies.filter(
-    (adjacency) => adjacency.strength !== ADJACENCY_STRENGTHS.Avoid
+  const name = (spaceId: string): string => programmeSpace(programme, spaceId)?.name ?? spaceId;
+  const describe = (adjacency: IntendedAdjacency): string =>
+    `- ${name(adjacency.fromSpaceId)} ${adjacency.strength === ADJACENCY_STRENGTHS.Avoid ? '⇹' : '↔'} ${name(adjacency.toSpaceId)} — ${adjacency.reason}`;
+
+  // What the user asked for is listed first and separately from what this
+  // artefact assumed (Bug 004, ADR-AI-0003 Rule 4). A separation is shown here
+  // too: it was filtered out of the card entirely before, which was tolerable
+  // while every `avoid` was the platform's own idea, and is not once a user can
+  // state one.
+  const asked = programme.adjacencies.filter(
+    (adjacency) => adjacency.source !== BRIEF_REQUIREMENT_SOURCES.Assumed
   );
-  if (stated.length > 0) {
-    lines.push('**Should be adjacent**');
-    for (const adjacency of stated) {
-      const from = programmeSpace(programme, adjacency.fromSpaceId)?.name ?? adjacency.fromSpaceId;
-      const to = programmeSpace(programme, adjacency.toSpaceId)?.name ?? adjacency.toSpaceId;
-      lines.push(`- ${from} ↔ ${to} — ${adjacency.reason}`);
-    }
-    lines.push('');
+  if (asked.length > 0) {
+    lines.push('**You asked for**', ...asked.map(describe), '');
+  }
+
+  const assumed = programme.adjacencies.filter(
+    (adjacency) =>
+      adjacency.source === BRIEF_REQUIREMENT_SOURCES.Assumed &&
+      adjacency.strength !== ADJACENCY_STRENGTHS.Avoid
+  );
+  if (assumed.length > 0) {
+    lines.push('**Should be adjacent**', ...assumed.map(describe), '');
   }
 
   return lines.join('\n').trimEnd();

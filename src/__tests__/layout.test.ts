@@ -83,7 +83,8 @@ function crossStoreyLayout(): LayoutPlan {
           fromSpaceId: kitchen.id,
           toSpaceId: bedroom.id,
           strength: 'required',
-          reason: 'so deliveries reach the bedroom without stairs'
+          reason: 'so deliveries reach the bedroom without stairs',
+          source: 'assumed'
         }
       ]
     }

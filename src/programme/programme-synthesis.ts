@@ -32,8 +32,10 @@ import {
   BRIEF_REQUIREMENT_SOURCES,
   BRIEF_TOPICS,
   briefRequirement,
+  SPACE_RELATIONSHIP_KINDS,
   type ArchitecturalBrief,
-  type DesiredSpace
+  type DesiredSpace,
+  type SpaceRelationship
 } from '../brief/index.js';
 import {
   ADJACENCY_STRENGTHS,
@@ -277,11 +279,38 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-function adjacenciesFor(spaces: readonly ProgrammeSpace[]): readonly IntendedAdjacency[] {
-  const find = (role: SpaceRole): ProgrammeSpace | undefined =>
-    spaces.find((space) => fills(role, space.name));
+/**
+ * The programme space a Brief relationship names (Bug 004, ADR-AI-0003 Rule 2).
+ *
+ * A relationship carries names, because `DesiredSpace` has no id. Matched the
+ * way everything else here matches: exactly first, then by role, so "lounge"
+ * finds the `dining/lounge` the user asked for and "dining room" finds it too.
+ */
+function spaceNamed(spaces: readonly ProgrammeSpace[], name: string): ProgrammeSpace | undefined {
+  const wanted = name.trim().toLowerCase();
+  const exact = spaces.find((space) => space.name.toLowerCase() === wanted);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const role = Object.values(SPACE_ROLES).find((candidate) => candidate.test(wanted));
+  return role === undefined ? undefined : spaces.find((space) => fills(role, space.name));
+}
 
+/**
+ * What the user stated, then what a dwelling usually implies.
+ *
+ * The order **is** the enforcement (ADR-AI-0003 Rule 5). Explicit relationships
+ * are seeded first and the pair guard makes any later template naming the same
+ * two spaces a no-op, so "a generic assumption cannot contradict an explicit
+ * requirement" is a property of how this function is written rather than a
+ * validation pass somebody has to remember to run.
+ */
+function adjacenciesFor(
+  spaces: readonly ProgrammeSpace[],
+  relationships: readonly SpaceRelationship[]
+): { readonly adjacencies: readonly IntendedAdjacency[]; readonly unresolved: readonly string[] } {
   const adjacencies: IntendedAdjacency[] = [];
+  const unresolved: string[] = [];
   // One compound space can fill two roles, so two templates can resolve to the
   // same pair — kitchen↔dining and living↔kitchen both land on a "dining/lounge"
   // (Bug 003). The first wins, which is why the template is ordered strongest
@@ -289,9 +318,32 @@ function adjacenciesFor(spaces: readonly ProgrammeSpace[]): readonly IntendedAdj
   // to describe the same two rooms.
   const stated = new Set<string>();
 
+  for (const relationship of relationships) {
+    const from = spaceNamed(spaces, relationship.from);
+    const to = spaceNamed(spaces, relationship.to);
+    if (from === undefined || to === undefined || from.id === to.id) {
+      // Rule 6: a name that matches no space is dropped with a warning, never a
+      // refusal. Mentioning a room they did not ask for is a small mistake.
+      unresolved.push(`${relationship.from} and ${relationship.to}`);
+      continue;
+    }
+    const separated = relationship.kind === SPACE_RELATIONSHIP_KINDS.Separated;
+    stated.add(pairKey(from.id, to.id));
+    adjacencies.push({
+      fromSpaceId: from.id,
+      toSpaceId: to.id,
+      // Rule 3: what the user states is a requirement, never a preference.
+      strength: separated ? ADJACENCY_STRENGTHS.Avoid : ADJACENCY_STRENGTHS.Required,
+      reason: separated
+        ? 'you asked for these to be kept separate'
+        : 'you asked for these to be next to each other',
+      source: relationship.source
+    });
+  }
+
   for (const template of ADJACENCY_TEMPLATE) {
-    const from = find(template.from);
-    const to = find(template.to);
+    const from = spaces.find((space) => fills(template.from, space.name));
+    const to = spaces.find((space) => fills(template.to, space.name));
     if (from === undefined || to === undefined || from.id === to.id) {
       continue;
     }
@@ -304,10 +356,12 @@ function adjacenciesFor(spaces: readonly ProgrammeSpace[]): readonly IntendedAdj
       fromSpaceId: from.id,
       toSpaceId: to.id,
       strength: template.strength,
-      reason: template.reason
+      reason: template.reason,
+      source: BRIEF_REQUIREMENT_SOURCES.Assumed
     });
   }
-  return adjacencies;
+
+  return { adjacencies, unresolved };
 }
 
 /** The total area the Brief stated, if it stated one. */
@@ -416,10 +470,23 @@ export function synthesizeProgramme(options: SynthesizeProgrammeOptions): Progra
     );
   }
 
-  const adjacencies = adjacenciesFor(spaces);
-  if (adjacencies.length > 0) {
+  const related = adjacenciesFor(spaces, brief.relationships);
+  const adjacencies = related.adjacencies;
+
+  const derived = adjacencies.filter(
+    (adjacency) => adjacency.source === BRIEF_REQUIREMENT_SOURCES.Assumed
+  );
+  if (derived.length > 0) {
     assumptions.push(
-      'The relationships between spaces are the usual ones for a home; nothing in the brief specified them.'
+      brief.relationships.length === 0
+        ? 'The relationships between spaces are the usual ones for a home; nothing in the brief specified them.'
+        : 'Beyond what you asked for, the remaining relationships between spaces are the usual ones for a home.'
+    );
+  }
+
+  if (related.unresolved.length > 0) {
+    warnings.push(
+      `I could not match ${related.unresolved.join('; ')} to spaces in this programme, so that relationship is not carried.`
     );
   }
 

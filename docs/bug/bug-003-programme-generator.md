@@ -205,21 +205,25 @@ boundary cases.
 compound summing, part-resolution refusal, and a guard that a genuinely unknown
 space is still reported as unknown.
 
-Full suites green: 659 tests in `architectural-intelligence`, the whole
+Full suites green: the whole `architectural-intelligence` suite, the whole
 `archisimple` workspace, and `pnpm depcruise` clean.
 
-## Still open
+**Release ordering** (ADR-0030 Rule 8). The `@archisimple/skills` half of this
+fix is unreleased, and this repository consumes the platform at `^0.2.0`. The
+areas only improve once skills ships and the `peerDependencies` range moves — so
+`brief-fidelity.test.ts` deliberately does **not** assert them, and says why. The
+`architectural-intelligence` half stands alone and needs no platform release.
 
-The explicit **"Kitchen and Dining/Lounge area are separated"** constraint is
-still not carried. This is not a regression and not a Programme defect: the Brief
-has no vocabulary for relationships at all — `DesiredSpace` is `{ name, count }`
-and `planning_captureBrief` has no relationships argument. The downstream target
-already exists (`IntendedAdjacency`, including `ADJACENCY_STRENGTHS.Avoid`), but
-it carries no provenance, so "a generated relationship must not contradict an
-explicit one" is unenforceable as things stand.
+## Split out of this one
 
-That is a new capability spanning two artefact schemas and a tool schema, not a
-bug fix. Tracked as **bug-004**, and it needs an ADR before it is built.
+The explicit **"Kitchen and Dining/Lounge area are separated"** constraint was
+deliberately left uncarried here. It is not a regression and not a Programme
+defect: the Brief had no vocabulary for relationships at all, so it was a new
+capability spanning two artefact schemas and a tool schema rather than a bug fix.
+
+Tracked as [bug-004](bug-004-brief-relationships.md), decided by
+[ADR-AI-0003](../adr/ADR-AI-0003-explicit-spatial-relationships.md), and since
+**fixed**.
 
 ## Definition of Done
 
@@ -231,7 +235,8 @@ bug fix. Tracked as **bug-004**, and it needs an ADR before it is built.
 - [x] The real 100 m² / 2-bedroom / 1-bathroom / office scenario is a regression test.
 - [x] Existing Architectural Intelligence tests remain green.
 - [x] No geometry or ArchiSimple execution changes were required.
-- [ ] Explicit Brief relationships are preserved structurally — **deferred to bug-004**.
+- [x] Explicit Brief relationships are preserved structurally — delivered by
+      [bug-004](bug-004-brief-relationships.md).
 - [ ] ~~Programme validation runs before the Programme is proposed~~ — withdrawn;
       the proposed checks are tautological against the generator, and validation
       was added where the loss actually occurs.

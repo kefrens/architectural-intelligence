@@ -19,9 +19,13 @@
 import {
   BRIEF_REQUIREMENT_SOURCES,
   BRIEF_TOPICS,
+  SPACE_RELATIONSHIP_KINDS,
+  withRelationship,
   type BriefRequirement,
   type BriefRequirementSource,
-  type DesiredSpace
+  type DesiredSpace,
+  type SpaceRelationship,
+  type SpaceRelationshipKind
 } from './architectural-brief.js';
 
 /** Number words a request plausibly uses for a count of rooms or storeys. */
@@ -281,6 +285,128 @@ export function readBareBoolean(text: string): boolean | undefined {
     return false;
   }
   return undefined;
+}
+
+/**
+ * Phrasings that state a relationship between two spaces (Bug 004,
+ * ADR-AI-0003 Rule 7).
+ *
+ * Each pattern must capture the two space names itself, so the clause boundaries
+ * are the pattern's problem rather than a later split's. `[\w/\-\s]+?` is
+ * deliberately lazy and deliberately allows `/` — the sentence that prompted all
+ * of this named a "Dining/Lounge area".
+ *
+ * Narrow on purpose. This reads sentences that plainly state a relationship and
+ * nothing else; anything it does not recognise stays the model's job, for the
+ * reason Bug 003 established — an invented requirement is worse than a missing
+ * one, because it is not visibly missing.
+ */
+/**
+ * A word that can be part of a space's name.
+ *
+ * The exclusions are what stop a capture running backwards over half the
+ * sentence: without them, "A house with the kitchen next to the dining room"
+ * matches from "house", because the engine tries the earliest start position and
+ * a permissive fragment happily spans "house with the kitchen". Barring the
+ * connectives from *inside* a name means the earliest position that can start one
+ * is the name itself.
+ */
+const NAME_WORD =
+  '(?!and\\b|with\\b|the\\b|an?\\b|my\\b|our\\b|for\\b|in\\b|on\\b|to\\b|from\\b|of\\b|is\\b|are\\b|be\\b|been\\b|should\\b|must\\b|put\\b|keep\\b|kept\\b|want\\b|need\\b|like\\b|please\\b)[\\w/-]+';
+
+/** One to several such words: "kitchen", "dining room", "Dining/Lounge area". */
+const SPACE_NAME = `(?:${NAME_WORD})(?:\\s+(?:${NAME_WORD}))*`;
+
+const RELATIONSHIP_RULES: readonly {
+  readonly pattern: RegExp;
+  readonly kind: SpaceRelationshipKind;
+}[] = [
+  {
+    // "Kitchen and Dining/Lounge area are separated", "… must be kept separate".
+    pattern: new RegExp(
+      `\\b(${SPACE_NAME})\\s+and\\s+(?:the\\s+)?(${SPACE_NAME})\\s+(?:are|is|should\\s+be|must\\s+be|to\\s+be)\\s+(?:kept\\s+)?separat(?:e|ed)\\b`,
+      'i'
+    ),
+    kind: SPACE_RELATIONSHIP_KINDS.Separated
+  },
+  {
+    // "keep the kitchen separate from the lounge".
+    pattern: new RegExp(
+      `\\b(${SPACE_NAME})\\s+separat(?:e|ed)\\s+from\\s+(?:the\\s+)?(${SPACE_NAME})`,
+      'i'
+    ),
+    kind: SPACE_RELATIONSHIP_KINDS.Separated
+  },
+  {
+    // "bedrooms away from the living room".
+    pattern: new RegExp(
+      `\\b(${SPACE_NAME})\\s+(?:well\\s+)?away\\s+from\\s+(?:the\\s+)?(${SPACE_NAME})`,
+      'i'
+    ),
+    kind: SPACE_RELATIONSHIP_KINDS.Separated
+  },
+  {
+    // "kitchen and dining should be open".
+    pattern: new RegExp(
+      `\\b(${SPACE_NAME})\\s+and\\s+(?:the\\s+)?(${SPACE_NAME})\\s+(?:are|is|should\\s+be|must\\s+be|to\\s+be)\\s+(?:open|connected|joined|together)\\b`,
+      'i'
+    ),
+    kind: SPACE_RELATIONSHIP_KINDS.Adjacent
+  },
+  {
+    // "kitchen next to the dining room", "kitchen opening onto the lounge".
+    pattern: new RegExp(
+      `\\b(${SPACE_NAME})\\s+(?:next\\s+to|adjacent\\s+to|opening\\s+onto|opens\\s+onto|beside)\\s+(?:the\\s+)?(${SPACE_NAME})`,
+      'i'
+    ),
+    kind: SPACE_RELATIONSHIP_KINDS.Adjacent
+  }
+];
+
+/** Leading articles and trailing nouns that are not part of the space's name. */
+function cleanSpaceName(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^(?:the|a|an|my|our|both|and)\s+/i, '')
+    .replace(/\s+(?:area|areas|space|spaces|room|rooms)$/i, '')
+    .replace(/[.,;!?]+$/, '')
+    .trim();
+}
+
+/**
+ * The relationships a request states between two of its spaces.
+ *
+ * Read per sentence, because every pattern here spans a clause and a sentence
+ * boundary is the one place a clause certainly ends. A name that survives
+ * cleaning but matches no space the brief knows is not filtered out here — the
+ * Space Programme drops it with a warning (Rule 6), because only the Programme
+ * knows which spaces finally exist.
+ */
+export function readSpaceRelationships(
+  text: string,
+  source: BriefRequirementSource = BRIEF_REQUIREMENT_SOURCES.Stated
+): readonly SpaceRelationship[] {
+  let relationships: readonly SpaceRelationship[] = [];
+
+  for (const sentence of text.split(/[.;\n]+/)) {
+    for (const rule of RELATIONSHIP_RULES) {
+      const match = sentence.match(rule.pattern);
+      if (!match) {
+        continue;
+      }
+      const from = cleanSpaceName(match[1] ?? '');
+      const to = cleanSpaceName(match[2] ?? '');
+      if (from.length === 0 || to.length === 0 || from.toLowerCase() === to.toLowerCase()) {
+        continue;
+      }
+      relationships = withRelationship(relationships, { from, to, kind: rule.kind, source });
+      // One relationship per sentence: the patterns overlap, and a sentence that
+      // matched two of them has been read twice rather than said two things.
+      break;
+    }
+  }
+
+  return relationships;
 }
 
 /**

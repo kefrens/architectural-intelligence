@@ -32,13 +32,16 @@
 
 import {
   assembleBriefFromFields,
+  BRIEF_REQUIREMENT_SOURCES,
   BRIEF_TOPICS,
   clarificationFor,
   describeClarification,
   reviseBriefFromFields,
+  SPACE_RELATIONSHIP_KINDS,
   toBriefProposal,
   type ArchitecturalBrief,
-  type DesiredSpace
+  type DesiredSpace,
+  type SpaceRelationship
 } from '../brief/index.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
 import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
@@ -89,6 +92,39 @@ function asSpaces(value: unknown): readonly DesiredSpace[] {
     });
   }
   return spaces;
+}
+
+/**
+ * Relationships the model read out of the conversation (Bug 004,
+ * ADR-AI-0003 Rules 1 and 7).
+ *
+ * An unrecognised `kind` drops the entry rather than defaulting it. Guessing
+ * between "adjacent" and "separated" would state the opposite of a requirement
+ * half the time, and the deterministic reader still gets its own pass at the
+ * sentence.
+ */
+function asRelationships(value: unknown): readonly SpaceRelationship[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const relationships: SpaceRelationship[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) {
+      continue;
+    }
+    const candidate = entry as { from?: unknown; to?: unknown; kind?: unknown };
+    if (typeof candidate.from !== 'string' || typeof candidate.to !== 'string') {
+      continue;
+    }
+    const kind = Object.values(SPACE_RELATIONSHIP_KINDS).find((known) => known === candidate.kind);
+    const from = candidate.from.trim();
+    const to = candidate.to.trim();
+    if (kind === undefined || from.length === 0 || to.length === 0) {
+      continue;
+    }
+    relationships.push({ from, to, kind, source: BRIEF_REQUIREMENT_SOURCES.Stated });
+  }
+  return relationships;
 }
 
 function asStrings(value: unknown): readonly string[] {
@@ -178,6 +214,25 @@ export function createCaptureBriefToolDefinition(
               type: 'number',
               description:
                 'A stated total floor area in square metres, only if the user gave one. This is a requirement, not an allocation.'
+            },
+            relationships: {
+              type: 'array',
+              description:
+                'Relationships the user stated between two spaces they named, e.g. "kitchen and dining are separated". Only include what the user actually said. Never include a distance.',
+              items: {
+                type: 'object',
+                properties: {
+                  from: { type: 'string', description: 'A space name, as used in `spaces`.' },
+                  to: { type: 'string', description: 'The other space name.' },
+                  kind: {
+                    type: 'string',
+                    enum: Object.values(SPACE_RELATIONSHIP_KINDS),
+                    description:
+                      '"separated" when they must not open onto each other, "adjacent" when they must.'
+                  }
+                },
+                required: ['from', 'to', 'kind']
+              }
             }
           },
           required: []
@@ -236,6 +291,7 @@ export function createCaptureBriefToolDefinition(
 
       const objectives = asStrings(args['objectives']);
       const spaces = asSpaces(args['spaces']);
+      const relationships = asRelationships(args['relationships']);
 
       // The user's own words. The model's arguments are a *reading* of them, and
       // Bug 003 is what the difference costs: a `totalArea` the model did not
@@ -258,6 +314,7 @@ export function createCaptureBriefToolDefinition(
           objectives,
           spaces,
           requirements,
+          relationships,
           ...(userMessage === undefined ? {} : { userMessage })
         });
       }
@@ -267,6 +324,7 @@ export function createCaptureBriefToolDefinition(
         objectives,
         spaces,
         requirements,
+        relationships,
         ...(userMessage === undefined ? {} : { userMessage })
       });
 
@@ -301,6 +359,7 @@ function reviseApproved(
       readonly value: string | number | boolean;
       readonly statement: string;
     }[];
+    readonly relationships: readonly SpaceRelationship[];
     /** The user's own words, re-read for the topics the model omitted (Bug 003). */
     readonly userMessage?: string;
   }
@@ -308,6 +367,7 @@ function reviseApproved(
   const revised = reviseBriefFromFields(approved, {
     requirements: fields.requirements,
     spaces: fields.spaces,
+    relationships: fields.relationships,
     ...(fields.userMessage === undefined ? {} : { userMessage: fields.userMessage })
   });
 

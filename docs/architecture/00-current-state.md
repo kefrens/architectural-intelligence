@@ -184,9 +184,18 @@ Captures user intent across nine topics. Every requirement records whether it
 was **stated** or **assumed**, and assumed values also appear in `assumptions`,
 so a review card can show the user what the platform decided on their behalf.
 
+It also carries the **relationships** the user stated between two spaces —
+`adjacent` or `separated`, and nothing else (Bug 004,
+[ADR-AI-0003](../adr/ADR-AI-0003-explicit-spatial-relationships.md)). They are
+topological: a relationship never carries a distance, which would be geometry in
+the artefact furthest from it. They name spaces rather than identifying them,
+because `DesiredSpace` has no id and gains none.
+
 Assembled by the host from resolved tool calls and typed data
 ([brief-assembly.ts](../../src/brief/brief-assembly.ts)) — never parsed out of
-model prose. An unfinished Brief lives in a `BriefDraftStore` between turns; an
+model prose. Both capture paths agree: whatever the model leaves out of a tool
+call, a deterministic reader recovers from the user's own message — the four
+high-confidence topics, and any relationship plainly stated (Bug 003, Bug 004). An unfinished Brief lives in a `BriefDraftStore` between turns; an
 approved one lives in the project file. Those are deliberately different places:
 a draft is a conversation in progress, an approved artefact is something the
 project has committed to.
@@ -197,6 +206,14 @@ Which spaces exist, what each is for, what matters most, and what should be near
 what. Priorities are `required` / `expected` / `optional`; zones are `day` /
 `night` / `service` / `circulation`; adjacency strength is `required` /
 `preferred` / `avoid`.
+
+Every intended adjacency records **who said it**, in the Brief's own
+`stated` / `answered` / `assumed` vocabulary. A relationship the user stated is
+seeded before the template runs and an unordered pair guard stops any template
+restating that pair, so "a generic assumption cannot contradict an explicit
+requirement" is a property of ordering rather than a validation pass
+(ADR-AI-0003 Rule 5). A stated separation reaches the Layout as a `separated`
+edge through machinery that has existed since Sprint 28.0.
 
 Every **number** comes from `@archisimple/skills`' `allocateSpaceAreas`, which is
 why the same Brief cannot produce two different programmes. The honesty rule is a

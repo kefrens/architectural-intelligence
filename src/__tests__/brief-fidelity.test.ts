@@ -215,9 +215,13 @@ describe('the reported scenario, end to end (Bug 003)', () => {
     expect(new Set(seen).size).toBe(seen.length);
   });
 
-  it('recognises every space it was given, so none takes a generic area', () => {
-    expect(programme().warnings.join(' ')).not.toContain('no typical size');
-  });
+  // Deliberately not asserted here: that "office" and "dining/lounge" resolve to
+  // a typical area rather than the generic 10 m². That half of Bug 003 is a
+  // `@archisimple/skills` change, and this repository consumes the platform at a
+  // released version (ADR-0030 Rule 4). Asserting it would make this suite fail
+  // against `skills@0.2.0` — which is what a clean clone installs — and pass only
+  // on a machine with an unreleased checkout. It is tested where it lives, in
+  // `programme-skills.test.ts`.
 
   it('still marks what it added itself as expected rather than required', () => {
     const hallway = programme().spaces.find((space) => space.name === 'hallway');

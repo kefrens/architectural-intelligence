@@ -205,23 +205,30 @@ artefacts:
       type: ArchitecturalBrief
       sprint: 27.8
       file: src/brief/architectural-brief.ts
-      owns: [user requirements, desired spaces, assumptions]
-      neverOwns: [areas, coordinates, geometry]
+      owns: [user requirements, desired spaces, stated relationships, assumptions]
+      neverOwns: [areas, coordinates, geometry, distances]
       topics:
         [storeys, bedrooms, bathrooms, garage, office, accessibility, style, budget, totalArea]
+      relationships:
+        sprint: bug-004
+        type: SpaceRelationship
+        kinds: [adjacent, separated]
+        note: 'topological only; names spaces rather than identifying them (ADR-AI-0003 Rules 1, 2)'
       assembledBy: src/brief/brief-assembly.ts
       provenance: none
     - kind: space-programme
       type: SpaceProgramme
       sprint: 27.9
       file: src/programme/space-programme.ts
-      owns: [room programme, target areas, intended adjacency, functional zoning]
+      owns:
+        [room programme, target areas, intended adjacency, adjacency provenance, functional zoning]
       neverOwns: [coordinates, walls]
       enums:
         priorities: [required, expected, optional]
         areaSources: [scaled-to-stated-total, typical]
         zones: [day, night, service, circulation]
         adjacencyStrengths: [required, preferred, avoid]
+        adjacencySources: [stated, answered, assumed]
       synthesizedBy: src/programme/programme-synthesis.ts
       provenance: { field: sourceBrief, type: BriefProvenance, staleCheck: matchesBrief }
     - kind: layout-plan

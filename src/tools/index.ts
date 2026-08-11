@@ -13,7 +13,7 @@
  */
 
 export { createArchitecturalToolDefinitions } from './architectural-tools.js';
-export { captureBriefToolDefinition } from './brief-tools.js';
+export { createCaptureBriefToolDefinition } from './brief-tools.js';
 export { createGeometryToolDefinition } from './geometry-tools.js';
 export { createLayoutToolDefinition } from './layout-tools.js';
 export { createProgrammeToolDefinition } from './programme-tools.js';

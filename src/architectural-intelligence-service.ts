@@ -89,6 +89,7 @@ import {
   isBriefComplete,
   REQUEST_LANES,
   reviseBriefFrom,
+  reviseBriefFromFields,
   startBriefDraft,
   toBriefProposal,
   type ArchitecturalBrief,
@@ -392,6 +393,15 @@ export class ArchitecturalIntelligenceService {
     }
 
     if (classification.lane === REQUEST_LANES.BriefGeneration) {
+      // Story 1.5.6. A complete design request arriving at a project that
+      // already holds a Brief is a *revision* of it, not a second one. Before
+      // Sprint 1.5 this branch called `assembleBrief` unconditionally and minted
+      // a new lineage — one of Bug 002's three fork paths, and the one that fires
+      // when a user re-describes their building without a revision cue.
+      if (this.approvedBrief() !== undefined) {
+        return { ...this.reviseApprovedBrief(utterance, intent), classification };
+      }
+
       const brief = assembleBrief({ utterance, classification });
       return {
         intent,
@@ -742,11 +752,7 @@ export class ArchitecturalIntelligenceService {
       // The utterance restated what the Brief already says. Superseding revision
       // n with an identical revision n+1 would be supersession theatre, and the
       // vocabulary already has the word for it.
-      const blocker: PlanBlocker = {
-        reason: PLAN_BLOCKER_REASONS.NothingToDo,
-        message: 'The brief already says that, so there is nothing to revise.',
-        suggestions: ['Name what should change — the number of bedrooms, storeys or bathrooms.']
-      };
+      const blocker = nothingToRevise();
       return { intent, message: blocker.message, blocker };
     }
 
@@ -867,6 +873,46 @@ export class ArchitecturalIntelligenceService {
     }
 
     this.briefDrafts?.clear();
+
+    // Story 1.5.7, and the fork path only a probe found. A completed draft
+    // becomes the artefact *under the draft's own id* — which is right for a
+    // first Brief and a second lineage for every one after it. When the project
+    // holds one, the answers fold into it instead.
+    const approved = this.approvedBrief();
+    if (approved !== undefined) {
+      return { ...this.foldIntoApprovedBrief(approved, revised, intent) };
+    }
+
+    return {
+      intent,
+      message: describeBrief(revised),
+      proposal: toBriefProposal(revised),
+      brief: revised
+    };
+  }
+
+  /**
+   * A completed draft, folded into the Brief the project already holds
+   * (Story 1.5.7).
+   *
+   * The draft's requirements are what the user just answered, so they are
+   * exactly the fields to fold — the draft itself is discarded rather than
+   * becoming an artefact of its own.
+   */
+  private foldIntoApprovedBrief(
+    approved: ArchitecturalBrief,
+    draft: ArchitecturalBrief,
+    intent: ArchitecturalIntent
+  ): ArchitecturalResponse {
+    const revised = reviseBriefFromFields(approved, {
+      requirements: draft.requirements,
+      spaces: draft.desiredSpaces
+    });
+
+    if (revised === undefined) {
+      return { intent, message: BRIEF_ALREADY_SAYS_THAT, blocker: nothingToRevise() };
+    }
+
     return {
       intent,
       message: describeBrief(revised),
@@ -925,6 +971,18 @@ const NO_APPROVED_PROGRAMME =
 /** What a geometry request gets when no Layout has been approved (Sprint 28.1a). */
 const NO_APPROVED_LAYOUT =
   'There is no approved layout yet, so there is nothing to realise. Approve a layout first and I will draw the rooms.';
+
+/** What every path answers when a re-description would change nothing (Sprint 1.5). */
+function nothingToRevise(): PlanBlocker {
+  return {
+    reason: PLAN_BLOCKER_REASONS.NothingToDo,
+    message: BRIEF_ALREADY_SAYS_THAT,
+    suggestions: ['Name what should change — the number of bedrooms, storeys or bathrooms.']
+  };
+}
+
+/** The sentence the tool and both conversational paths share (Story 1.5.8). */
+const BRIEF_ALREADY_SAYS_THAT = 'The brief already says that, so there is nothing to revise.';
 
 /** What a revision request gets when the project holds no Brief (Sprint 1.3). */
 const NO_BRIEF_TO_REVISE =

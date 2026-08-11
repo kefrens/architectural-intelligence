@@ -1,6 +1,6 @@
 # Architectural Intelligence — Current State Architecture
 
-**Generated:** 2026-08-10, from the implementation at commit `44e0f43` plus Sprints 1.2, 1.3 and 1.4
+**Generated:** 2026-08-10, from the implementation at commit `44e0f43` plus Sprints 1.2 through 1.5
 **Package:** `@archisimple/architectural-intelligence` `0.2.0` (staged; not yet published)
 **Companion:** [00-current-state.yaml](00-current-state.yaml) — the same facts, machine-readable
 
@@ -10,7 +10,7 @@ _What is not implemented_ at the end, and it is there. Source code wins over
 this document.
 
 Verified for this snapshot rather than assumed: `tsc -b` builds clean,
-`eslint .` reports nothing, and `vitest run` passes **610 tests across 14
+`eslint .` reports nothing, and `vitest run` passes **642 tests across 15
 files**.
 
 This is the first current-state pair this repository has had. Until Sprint 30.3
@@ -31,7 +31,7 @@ own compliance test rather than trusted to the layering. It reads the Building
 Platform through the services that already derive it, and it emits work that
 somebody else executes, after a user has approved it.
 
-11,380 lines of production TypeScript across eleven directories, published as
+11,770 lines of production TypeScript across eleven directories, published as
 one ES module with a single entry point.
 
 Three things reach a host from here:
@@ -408,6 +408,35 @@ detected, because `matchesBrief` compares the id as well as the revision, but th
 record of what the user approved _first_ was disconnected from what they approved
 instead.
 
+## Every path that produces a Brief folds into the one it has
+
+Sprint 1.3 gave four stages "producing an artefact for a project that already has
+one is a **revision** of it" and left the Brief three paths that _created_ one.
+All three forked, and two forks made the project unusable: a second lineage sets
+an `ambiguous` blocker on the Brief stage itself, which leaves no stage eligible
+and no way back (Bug 002).
+
+Sprint 1.5 closed all three. They fold through one function:
+
+```text
+   a tool call ──┐
+   an utterance ─┼──▶ reviseBriefFromFields(approved, fields)
+   a draft ──────┘              │
+                                ├─ nothing moved  → undefined → NothingToDo
+                                └─ something moved → revision n+1, same id
+```
+
+`planning_captureBrief` became `createCaptureBriefToolDefinition(intelligence)` to
+make that possible — it was the one planning tool that was a standalone `const`,
+so it held no service, could not read `approvedBrief()`, and could not know a
+Brief existed. Its **name, schema and arguments are unchanged**; only the host's
+composition differs.
+
+Change is judged on what the caller **supplied**, never on the merged result:
+`mergeSpaces` also derives spaces from the requirements, and comparing the merged
+list would make every identical re-capture look like a change — the loop Bug 002
+actually produced.
+
 ## Three things now produce revisions
 
 - **`reviseBriefFrom`** — the production path for changing an approved Brief.
@@ -726,6 +755,7 @@ provider reaches the same planner through the same tools.
 | `architecture-compliance.test.ts`            |     245 |
 | `workflow-state.test.ts`                     |      43 |
 | `revision-lineage.test.ts`                   |      40 |
+| `brief-lifecycle.test.ts`                    |      32 |
 | `architectural-context.test.ts`              |      17 |
 | `programme.test.ts`                          |      38 |
 | `layout.test.ts`                             |      38 |
@@ -737,7 +767,7 @@ provider reaches the same planner through the same tools.
 | `building-knowledge.test.ts`                 |      15 |
 | `architectural-intelligence-service.test.ts` |      13 |
 | `pipeline.test.ts`                           |       8 |
-| **Total**                                    | **610** |
+| **Total**                                    | **642** |
 
 `pipeline.test.ts` runs the design pipeline through the real `AiSessionController`,
 and `specification.test.ts` runs the full chain — utterance to Geometry

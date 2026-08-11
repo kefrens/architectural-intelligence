@@ -16,7 +16,7 @@ meta:
   version: '0.2.0'
   repository: 'https://github.com/kefrens/architectural-intelligence'
   licence: MIT
-  latestImplementedSprint: 1.4 # this repository's own numbering since the extraction
+  latestImplementedSprint: 1.5 # this repository's own numbering since the extraction
   extractedFrom: { repository: archisimple, sprint: 30.3, adr: ADR-0030 }
   packageManager: npm
   standalone: true
@@ -30,14 +30,14 @@ meta:
   typesEntry: dist/index.d.ts
   publishedFiles: [dist]
   node: '>=20'
-  productionSourceLines: 11380
-  latestSprint: 1.4 # this repository's own numbering; see docs/sprints/
+  productionSourceLines: 11770
+  latestSprint: 1.5 # this repository's own numbering; see docs/sprints/
   productionSourceDirectories: 11
   verification:
     # Executed for this snapshot, not inferred.
     build: { command: 'tsc -b', status: pass }
     lint: { command: 'eslint .', status: pass }
-    test: { command: 'vitest run', status: pass, files: 14, tests: 610 }
+    test: { command: 'vitest run', status: pass, files: 15, tests: 642 }
 
 # The platform this layer reads. Declared as peerDependencies so the host and
 # this package share one automation-api and one ai-engine — two copies of the
@@ -139,6 +139,10 @@ lanes:
         requires: 'a revision cue AND a brief topic the reader recognises'
       }
   mandatoryBriefTopics: [storeys, bedrooms, bathrooms]
+  # Sprint 1.5: every planning tool is now a factory bound to the service. The
+  # Brief's was the last standalone one, which is why it could not read
+  # `approvedBrief()` and forked the lineage on every call (Bug 002).
+  allToolsServiceBound: true
   # Sprint 1.2, ADR-AI-0002 Rules 7 and 8. Each stage gate means approved *and
   # current*, and all four are read off the workflow-state projection rather than
   # derived a second time inside interpret.
@@ -172,9 +176,23 @@ artefacts:
   # revision the regeneration read.
   regenerationIsRevision: true
   lineagesPerStage: 1
+  # Sprint 1.5 (Bug 002). Sprint 1.3 gave four stages "produce = revise" and left
+  # the Brief three paths that *created* one, all of which forked. A second
+  # lineage made every stage ineligible, so an ordinary conversation could kill a
+  # project in two turns. All three now fold through one function.
+  briefProducingPaths:
+    - { path: planning_captureBrief, folds: true, since: 1.5 }
+    - { path: 'interpret → brief-generation', folds: true, since: 1.5 }
+    - { path: 'interpret → clarification completes', folds: true, since: 1.5 }
+    - { path: 'interpret → brief-revision', folds: true, since: 1.3 }
+  briefFoldingFunction: reviseBriefFromFields
+  unchangedInputAnswers: nothing-to-do
   revisePatchIncludesProvenance: true # widened by Sprint 1.3, all four artefacts
   productionRevisionCallers:
-    - { function: reviseBrief, calledBy: 'brief-assembly (clarification) and reviseBriefFrom' }
+    - {
+        function: reviseBrief,
+        calledBy: 'reviseBriefFromFields — the one folding rule, behind every path that produces a Brief (Sprint 1.5)'
+      }
     - { function: reviseProgramme, calledBy: ArchitecturalIntelligenceService.generateProgramme }
     - { function: reviseLayoutPlan, calledBy: ArchitecturalIntelligenceService.generateLayout }
     - { function: reviseGeometryGraph, calledBy: ArchitecturalIntelligenceService.generateGeometry }
@@ -487,13 +505,14 @@ provider:
     { id: ARCHITECTURAL_CONTEXT_PROVIDER_ID, file: src/context/architectural-context-provider.ts }
 
 tests:
-  files: 14
-  tests: 610
+  files: 15
+  tests: 642
   harness: src/__tests__/harness.ts
   perFile:
     architecture-compliance: 245
     workflow-state: 43
     revision-lineage: 40
+    brief-lifecycle: 32
     programme: 38
     architectural-context: 17
     layout: 38
@@ -549,7 +568,7 @@ ci:
 
 docs:
   adr: [ADR-AI-0001, ADR-AI-0002] # ADR-AI-0002 at revision 1.2
-  sprints: [1.1, 1.2, 1.3, 1.4]
+  sprints: [1.1, 1.2, 1.3, 1.4, 1.5]
   inheritedFrom:
     repository: archisimple
     documents:
@@ -574,6 +593,12 @@ notImplemented:
     name: Reporting which proposal is awaiting approval
     evidence: 'ProposalApprovalState and pendingProposal() are session-scoped in @archisimple/ai-engine; this layer observes approval only as an artefact becoming readable (ADR-AI-0002 Rule 2)'
     byDesign: true
+  - id: dwelling-evidence-without-a-dwelling-word
+    name: Reading "build me … with 2 bedrooms and 1 bathroom" as a design request when no dwelling word matches
+    evidence: "DWELLING_WORDS is an exact-match list; Sprint 1.5 added spellings (appartment, appartement) and types (duplex, townhouse, penthouse) but did not widen what counts as evidence — that trade is the classifier's deliberate asymmetry and wants its own decision"
+  - id: split-lineage-repair
+    name: Repairing a project that already holds two Brief lineages
+    evidence: 'Sprint 1.5 makes the split unreachable; a project created before it holds two designs and no basis for preferring either, and choosing needs a surface that can show both'
   - id: windows
     name: Openings in external walls
     evidence: 'the Geometry Graph produces opening candidates only between two rooms, so there is no candidate in an external wall for a window to be placed in; recorded in the specification’s own assumptions'

@@ -359,7 +359,7 @@ export {
 
 /** The planning tools, for a host composing them without the contribution. */
 export {
-  captureBriefToolDefinition,
+  createCaptureBriefToolDefinition,
   createArchitecturalToolDefinitions,
   createGeometryToolDefinition,
   createLayoutToolDefinition,

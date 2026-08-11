@@ -69,8 +69,34 @@ function plural(count: number, singular: string): string {
 const TYPOLOGY = /\b([TF])\s?([1-9])\b/i;
 
 /** Words that mean "a dwelling", which is what makes a request a programme rather than a command. */
+/**
+ * Words that name a whole dwelling — the positive evidence the classifier
+ * requires before it will read a request as a design brief.
+ *
+ * ## Spellings (Sprint 1.5, Story 1.5.10 — Bug 002)
+ *
+ * The list is exact-match, so a misspelling is not a near miss: it is silence.
+ * `Build me a 100m2 appartment, with 2 bedrooms and 1 bathroom` named no
+ * dwelling, fell to Direct Execution, and was answered "I did not recognise that
+ * as something I can do to the building model" followed by seven `edit.*`
+ * operations — confident, wrong, and unrelated to what was asked.
+ *
+ * `appartment` and `appartement` are the French spelling and the commonest
+ * English misspelling of the commonest word here. `maisonnette` is the same for
+ * the word beside it.
+ *
+ * Adding a spelling does **not** widen what counts as evidence — a list that
+ * already accepts `apartment` accepting `appartment` changes nothing about the
+ * classifier's deliberate asymmetry. Widening the evidence itself (a design verb
+ * plus two mandatory topics, with no dwelling word at all) was considered and
+ * left out of Sprint 1.5 on purpose: it is probably the better rule and it
+ * deserves its own decision rather than arriving inside a lineage fix.
+ *
+ * `duplex`, `townhouse` and `penthouse` are not misspellings — they are dwelling
+ * types the list simply never had.
+ */
 export const DWELLING_WORDS =
-  /\b(house|home|apartment|flat|villa|bungalow|cottage|studio|dwelling|residence|maisonette)\b/i;
+  /\b(house|home|apartment|appartment|appartement|flat|villa|bungalow|cottage|studio|dwelling|residence|maisonette|maisonnette|duplex|townhouse|penthouse)\b/i;
 
 interface TopicRule {
   readonly topic: string;

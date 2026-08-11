@@ -154,6 +154,14 @@ No migration, and no repair path for existing files: there are no projects
 created before this sprint. The report exists to catch a regression in the
 revision paths Epic 2 adds, not to accommodate history.
 
+> **Corrected by Sprint 1.5 (Bug 002).** This reasoning is about _pre-existing
+> files_, and it is true and irrelevant. The split does not come from history: it
+> comes from the paths that **create** a Brief, none of which this sprint
+> touched. `planning_captureBrief` minted a new lineage on every call, so an
+> ordinary conversation reached the state in two turns — and because the blocker
+> leaves no stage eligible, reaching it killed the project. Sprint 1.5 closed all
+> three creating paths; the blocker itself is unchanged and still correct.
+
 ---
 
 ## Epic 2 — Revision as a production path

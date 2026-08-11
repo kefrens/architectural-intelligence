@@ -49,8 +49,8 @@ import {
   createArchitecturalProviderAdapter
 } from './provider/architectural-provider-adapter.js';
 import {
-  captureBriefToolDefinition,
   createArchitecturalToolDefinitions,
+  createCaptureBriefToolDefinition,
   createGeometryToolDefinition,
   createLayoutToolDefinition,
   createProgrammeToolDefinition,
@@ -195,7 +195,7 @@ function contributionFor(
       //
       // The one tool here that takes fields, because a Brief is built from what
       // the user said and the model is what read it.
-      captureBriefToolDefinition,
+      createCaptureBriefToolDefinition(intelligence),
       ...createArchitecturalToolDefinitions(intelligence),
       // Sprints 27.9, 28.0 and 28.1a. Each bound to the service because the
       // approved artefact it reads lives behind that service's artefact reader,

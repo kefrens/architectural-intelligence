@@ -32,6 +32,7 @@ import {
   withRequirement,
   type ArchitecturalBrief,
   type BriefRequirement,
+  type BriefRequirementSource,
   type DesiredSpace
 } from './architectural-brief.js';
 import {
@@ -206,19 +207,89 @@ export function reviseBriefFrom(
   approved: ArchitecturalBrief,
   utterance: string
 ): ArchitecturalBrief | undefined {
+  return reviseBriefFromFields(approved, {
+    utterance,
+    requirements: readBriefTopics(utterance)
+  });
+}
+
+/**
+ * The one folding rule (Sprint 1.5, Story 1.5.1 — Bug 002).
+ *
+ * Three things can now produce a Brief for a project that already has one: a
+ * `planning_captureBrief` call, a design request that arrives without a revision
+ * cue, and a clarification dialogue that completes. Before this sprint each of
+ * them minted a **new lineage**, and Sprint 1.3's integrity check then reported
+ * the project as ambiguous — correctly, and fatally, since the blocker leaves no
+ * stage eligible and no way back.
+ *
+ * So all three fold through here. Two readers sit in front of it —
+ * {@link reviseBriefFrom} for an utterance, the tool for structured fields — and
+ * neither holds an opinion about what "the same Brief, changed" means.
+ *
+ * ## What folding is
+ *
+ * Settled by Story 1.3.5 and unchanged: a stated topic **overrides its topic**,
+ * everything else is carried forward **with its original `source`** so a
+ * requirement the user stated does not quietly become an assumption, desired
+ * spaces are merged, and `objectives` are carried forward because a correction is
+ * not a new purpose.
+ *
+ * `utterance` is replaced only when the caller has one. A tool call carries
+ * structured fields and no sentence of its own, so the Brief keeps the words it
+ * was first described with rather than losing them to a re-capture.
+ *
+ * @returns `undefined` when nothing moved — the caller answers `NothingToDo`
+ * rather than superseding revision _n_ with an identical revision _n+1_.
+ */
+export function reviseBriefFromFields(
+  approved: ArchitecturalBrief,
+  fields: {
+    readonly utterance?: string;
+    /** The same loose shape {@link assembleBriefFromFields} accepts, so both readers agree. */
+    readonly requirements?: readonly {
+      readonly topic: string;
+      readonly value: string | number | boolean;
+      readonly statement?: string;
+      readonly source?: BriefRequirementSource;
+    }[];
+    readonly spaces?: readonly DesiredSpace[];
+  }
+): ArchitecturalBrief | undefined {
   let requirements = approved.requirements;
-  for (const stated of readBriefTopics(utterance)) {
-    requirements = withRequirement(requirements, stated);
+  for (const supplied of fields.requirements ?? []) {
+    requirements = withRequirement(requirements, {
+      topic: supplied.topic,
+      value: supplied.value,
+      statement: supplied.statement ?? `${supplied.topic}: ${String(supplied.value)}`,
+      // A topic the caller restated is one the user stated, whatever the Brief
+      // assumed before. Topics they did not mention keep the source they had —
+      // that is what `withRequirement` replacing by topic gives us.
+      source: supplied.source ?? BRIEF_REQUIREMENT_SOURCES.Stated
+    });
   }
 
-  if (!requirementsChanged(approved.requirements, requirements)) {
+  // Change is judged on what the caller *supplied*, never on the merged result.
+  // `mergeSpaces` also derives spaces from the requirements — a brief whose
+  // desired spaces named only bedrooms gains a bathroom from the bathroom count
+  // — and that enrichment is not the user telling us something new. Comparing
+  // the merged list would make every identical re-capture look like a change,
+  // which is exactly the loop Story 1.5.3 exists to end.
+  const addedSpaces = (fields.spaces ?? []).filter(
+    (space) =>
+      !approved.desiredSpaces.some(
+        (existing) => existing.name === space.name && existing.count === space.count
+      )
+  );
+
+  if (!requirementsChanged(approved.requirements, requirements) && addedSpaces.length === 0) {
     return undefined;
   }
 
   return reviseBrief(approved, {
-    utterance,
+    ...(fields.utterance === undefined ? {} : { utterance: fields.utterance }),
     requirements,
-    desiredSpaces: mergeSpaces(approved.desiredSpaces, requirements)
+    desiredSpaces: mergeSpaces([...approved.desiredSpaces, ...addedSpaces], requirements)
   });
 }
 

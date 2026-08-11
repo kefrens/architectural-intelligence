@@ -46,6 +46,7 @@ export {
   assembleBrief,
   assembleBriefFromFields,
   reviseBriefFrom,
+  reviseBriefFromFields,
   startBriefDraft,
   type AssembleBriefOptions
 } from './brief-assembly.js';

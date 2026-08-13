@@ -24,10 +24,10 @@ ADRs set are summarised where they bite, below.
 
 ## Read before designing anything
 
-| Document                                                                     | What it gives you                                                            |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [docs/architecture/00-current-state.yaml](docs/architecture/00-current-state.yaml) | **Start here.** Machine-readable inventory of everything implemented here.    |
-| [docs/architecture/00-current-state.md](docs/architecture/00-current-state.md)     | The same, in prose, with the reasoning behind each decision.                  |
+| Document                                                                                         | What it gives you                                                                |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| [docs/architecture/00-current-state.yaml](docs/architecture/00-current-state.yaml)               | **Start here.** Machine-readable inventory of everything implemented here.       |
+| [docs/architecture/00-current-state.md](docs/architecture/00-current-state.md)                   | The same, in prose, with the reasoning behind each decision.                     |
 | [docs/adr/ADR-AI-0001-geometry-specification.md](docs/adr/ADR-AI-0001-geometry-specification.md) | The Geometry Specification — the final artefact, and the contract with any host. |
 
 `00-current-state.*` describes **what is implemented**, never what is planned.
@@ -125,7 +125,7 @@ goes stale the moment a later revision lands. Resist adding one.
 | Path                                    | What lives there                                                                                     |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `architectural-intelligence-service.ts` | The service. `interpret`, `generate{Programme,Layout,Geometry}`, `approved*`, provider registration. |
-| `brief/`                                | Stage 1, plus `request-classification.ts` — the six lanes.                                           |
+| `brief/`                                | Stage 1, plus `request-classification.ts` — the nine lanes.                                          |
 | `programme/` · `layout/` · `geometry/`  | Stages 2–4. Synthesis and evaluation.                                                                |
 | `planning/`                             | `ArchitecturalPlanner`, `planning-stage.ts`, `architectural-plan.ts`.                                |
 | `planning/operations/`                  | `ArchitecturalOperationProvider` implementations.                                                    |
@@ -133,14 +133,28 @@ goes stale the moment a later revision lands. Resist adding one.
 | `intent/` · `understanding/`            | Intent recognition; `BuildingKnowledge`.                                                             |
 | `proposal/` · `provider/` · `context/`  | Proposal building, the provider adapter, context contribution.                                       |
 
-### Classification is deterministic and host-side
+### Classification is deterministic
 
 [`brief/request-classification.ts`](src/brief/request-classification.ts) sorts an
-utterance into one of six lanes **before any provider is consulted**. The three
-stage lanes are each gated on approval state (`hasApprovedBrief`,
-`hasApprovedProgramme`, `hasApprovedLayout`), so they are unreachable for a caller
-that has not opted in. That gating _is_ the pipeline's sequencing — there is no
-orchestrator object, and adding one would be a new execution path.
+utterance into one of **nine** lanes **before any provider is consulted**. The
+four stage lanes are each gated on approval state (`hasApprovedBrief`,
+`hasApprovedProgramme`, `hasApprovedLayout`, `hasApprovedGeometry`), read off the
+workflow projection, so they are unreachable for a caller that has not opted in.
+That gating _is_ the pipeline's sequencing — there is no orchestrator object, and
+adding one would be a new execution path.
+
+It runs inside `interpret`, whose **one caller is the Architectural Assistant
+adapter**. A language-model provider never reaches the classifier; it reaches
+capability through the host's Tool Broker. Both paths end at the same proposals.
+
+Two lanes ask a different kind of question from the four stage gates:
+`brief-revision` (is there a Brief to _change_) and, since Sprint 1.6,
+**`realisation`** (is there a design here to _build_). Realisation is checked
+before every stage lane — every stage stays eligible once approved, so in a
+finished project the geometry and specification lanes would otherwise regenerate
+the design a user asked to build. It produces a `Proposal` carrying
+`{ specificationId, revision }` and nothing executable; the host builds it
+(ADR-0032 revision 2.2, ADR-AI-0002 revision 1.3).
 
 ---
 

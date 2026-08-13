@@ -107,21 +107,25 @@ a button click uses.
 
 ---
 
-# The front door: eight lanes
+# The front door: nine lanes
 
 `ArchitecturalIntelligenceService.interpret` classifies one utterance
-**deterministically, host-side, before any provider is consulted**, and routes
-it into one of eight lanes ([src/brief/request-classification.ts](../../src/brief/request-classification.ts)):
+**deterministically, before any provider is consulted**, and routes it into one
+of nine lanes ([src/brief/request-classification.ts](../../src/brief/request-classification.ts)).
+`interpret` has exactly one caller — the Architectural Assistant adapter — so
+this is the deterministic assistant's front door. A language-model provider never
+reaches it; it reaches capability through the host's Tool Broker.
 
-| Lane                       | Produces                         | Reachable only when               |
-| -------------------------- | -------------------------------- | --------------------------------- |
-| `direct-execution`         | `ArchitecturalPlan` → `Proposal` | always                            |
-| `brief-generation`         | `ArchitecturalBrief`             | enough was said to write one      |
-| `clarification-required`   | one focused question             | a mandatory topic is unanswered   |
-| `programme-generation`     | `SpaceProgramme`                 | an approved Brief exists          |
-| `layout-generation`        | `LayoutPlan`                     | an approved Programme exists      |
-| `geometry-generation`      | `GeometryGraph`                  | an approved Layout exists         |
-| `specification-generation` | `GeometrySpecification`          | an approved Geometry Graph exists |
+| Lane                       | Produces                              | Reachable only when               |
+| -------------------------- | ------------------------------------- | --------------------------------- |
+| `direct-execution`         | `ArchitecturalPlan` → `Proposal`      | always                            |
+| `brief-generation`         | `ArchitecturalBrief`                  | enough was said to write one      |
+| `clarification-required`   | one focused question                  | a mandatory topic is unanswered   |
+| `programme-generation`     | `SpaceProgramme`                      | an approved Brief exists          |
+| `layout-generation`        | `LayoutPlan`                          | an approved Programme exists      |
+| `geometry-generation`      | `GeometryGraph`                       | an approved Layout exists         |
+| `specification-generation` | `GeometrySpecification`               | an approved Geometry Graph exists |
+| `realisation`              | a realisation `Proposal` for the host | an approved Specification exists  |
 
 The four artefact lanes are gated on what the project has actually approved,
 read through an optional `PlanningArtefactReader` the host supplies. A host that
@@ -142,6 +146,33 @@ below it can be built. It fires only when the utterance carries a revision cue �
 _actually, instead, change, make it_ — **and** states a brief topic the reader
 recognises. A cue alone is not enough: "actually, move the kitchen wall 200 mm"
 is a correction and a modelling command, and the direct lane keeps it.
+
+The **realisation lane** (Sprint 1.6, BUG-008 Phase 3) is the first whose subject
+is not a planning stage: it asks for the approved design to be **built**, which
+only the host can do, and it produces a `Proposal` carrying
+`{ specificationId, revision }` — an identity, never a plan. Approving it reaches
+ArchiSimple's one realisation entry point (ADR-0032 revision 2.2).
+
+It is checked **before every stage lane**, which inverts the ordering the four
+above it follow. The reason is measurable: every stage stays _eligible_ once
+approved, because regeneration is always available. So in exactly the project
+where a user says "build it" — one that has approved all five artefacts — the
+geometry and specification lanes are still open, and before this sprint _"realise
+the design"_ regenerated the Geometry Graph while _"create the building from this
+specification"_ regenerated the Specification. Both now build.
+
+Its gate asks a third kind of question: `hasApprovedSpecification` means _there
+is a design here to build_, not _the stage below may run_, and deliberately not
+_and it is current_ — a stale design is answered with a `superseded` blocker
+naming the fix, rather than by the lane silently closing. Whether the design has
+**already been built** is not knowable in this layer at all (ADR-AI-0002
+revision 1.3, extension to Rule 2): such a proposal is refused by the host's
+guard on approval, and that refusal is authoritative in a way a guess here would
+not be.
+
+Recognition needs three things together — a construction verb, the design _as a
+whole_ as its subject, and **no element named**. The third is what keeps Story
+27.8.3's promise: "build a wall here" says `build` and means one wall.
 
 The specification lane's word set is the narrowest in the file, and deliberately:
 it matches `walls` **plural** and never `wall`. "Create a wall from (0,0) to

@@ -100,7 +100,24 @@ export const REQUEST_LANES = {
    * different question from the four stage gates beside it: not "is the next
    * stage available" but "is there a Brief here to revise at all".
    */
-  BriefRevision: 'brief-revision'
+  BriefRevision: 'brief-revision',
+  /**
+   * The project has an approved Geometry Specification and the user is asking
+   * for it to be **built** (Sprint 1.6 — BUG-008 Phase 3; ADR-AI-0002
+   * revision 1.3, extension to Rule 8).
+   *
+   * The ninth lane, and **the first whose subject is not a planning stage.**
+   * Every lane above asks for an artefact this layer can produce; this one asks
+   * for something only the host can do, and produces the *identity* of the
+   * design to build. Approving the proposal reaches ArchiSimple's one
+   * realisation entry point (ADR-0032 revision 2.2), which decides whether the
+   * build may happen and performs it.
+   *
+   * Guarded by {@link ClassifyRequestOptions.hasApprovedSpecification}, which —
+   * like `hasBriefToRevise` and unlike the four stage gates — asks whether there
+   * is something *here*, not whether a stage below may run.
+   */
+  Realisation: 'realisation'
 } as const;
 
 export type RequestLane = (typeof REQUEST_LANES)[keyof typeof REQUEST_LANES];
@@ -180,6 +197,18 @@ export interface ClassifyRequestOptions {
    * depending on the lane that reads it.
    */
   readonly hasBriefToRevise?: boolean;
+  /**
+   * Whether this project holds an approved Geometry Specification — a design
+   * that could be built (Sprint 1.6). Defaults to `false`.
+   *
+   * **Approved, not "approved and current"**, which is the third distinct
+   * question in this options object. A stale Specification is still a design the
+   * user meant to build, and closing the lane on it would answer "build it" with
+   * whatever the fall-through happens to produce. Opening the lane lets
+   * `interpret` say the design is out of date and name the fix, from the same
+   * projection this gate came from (ADR-AI-0002 Rules 8 and 13).
+   */
+  readonly hasApprovedSpecification?: boolean;
 }
 
 /**
@@ -268,6 +297,41 @@ const LAYOUT_WORDS =
 const REVISION_CUES =
   /\b(actually|instead|rather|revise|change|update|correct|make\s+it|no,|scrap|amend)\b/i;
 
+/**
+ * Verbs that ask for the approved design to become a building (Sprint 1.6).
+ *
+ * `make` is absent deliberately: "make it wider" is a modelling command, and the
+ * one realisation phrase that uses it — "make it real" — is matched whole by
+ * {@link REALISATION_PHRASES} instead of widening the verb set for one idiom.
+ */
+const REALISATION_VERBS = /\b(build|rebuild|realise|realize|construct|erect|create)\b/i;
+
+/** Whole phrases a verb set cannot express without becoming dangerous. */
+const REALISATION_PHRASES = /\bturn\b[^.]*\binto\b|\bmake\s+it\s+real\b/i;
+
+/**
+ * What a realisation request is *about*: the design as a whole.
+ *
+ * `it` and `this` are here because "build it" is the phrase the whole of BUG-008
+ * is about, and after an approved Specification there is exactly one thing "it"
+ * can mean. What keeps that safe is {@link AUTHORING_SUBJECTS} below, not
+ * narrowness here.
+ */
+const REALISATION_SUBJECTS =
+  /\b(it|this|that|everything|the\s+(approved\s+)?(design|specification|spec|plan|project)|the\s+(building|house|home|apartment|flat|dwelling))\b/i;
+
+/**
+ * Naming an element makes it a modelling command, not a realisation.
+ *
+ * The same reasoning as `SPECIFICATION_WORDS` matching plural `walls` and never
+ * singular `wall`, applied to the whole lane: "create a wall from (0,0) to
+ * (4,0)" contains a realisation verb and the word `a wall`, and it is Story
+ * 27.8.3's canonical thing-that-must-not-be-hijacked. A user asking for the
+ * building does not name a component of it.
+ */
+const AUTHORING_SUBJECTS =
+  /\b(walls?|doors?|windows?|openings?|rooms?|partitions?|slabs?|roofs?|stairs?|floors?|ceilings?|columns?|beams?)\b/i;
+
 /** Verbs that ask for something to be produced from what already exists. */
 const PROGRAMME_VERBS =
   /\b(generate|create|build|make|write|draw\s+up|produce|prepare|work\s+out|now|next|continue|proceed|go\s+ahead)\b/i;
@@ -283,6 +347,27 @@ export function classifyRequest(
   // Platform can answer it today, which is the definition of Direct Execution.
   if (recognizeIntent(trimmed).kind === ARCHITECTURAL_INTENT_KINDS.Question) {
     return direct('This is a question about the existing project.');
+  }
+
+  // The realisation lane (Sprint 1.6), checked **before every stage lane** —
+  // which inverts the ordering the four below it follow, and does so
+  // deliberately.
+  //
+  // Those four are ordered by pipeline position because each asks for the stage
+  // above the one it names. Realisation is not a stage: it asks for the finished
+  // design to be built, and every stage stays *eligible* once approved because
+  // regeneration is always available. So in exactly the project where a user
+  // says "build it" — one that has approved all five stages — the geometry and
+  // specification lanes are still open, and `realise the design` and `create the
+  // building from this specification` would both regenerate part of the design
+  // the user is asking to build (Sprint 1.6 §2.2, measured before it was fixed).
+  if (options.hasApprovedSpecification === true && isRealisationRequest(trimmed)) {
+    return {
+      lane: REQUEST_LANES.Realisation,
+      reason: 'This asks for the approved design to be built.',
+      signals: ['approved specification'],
+      missing: []
+    };
   }
 
   // The specification lane (Sprint 1.2), checked before the geometry lane and
@@ -414,4 +499,24 @@ export function classifyRequest(
 
 function direct(reason: string): RequestClassification {
   return { lane: REQUEST_LANES.DirectExecution, reason, signals: [], missing: [] };
+}
+
+/**
+ * Whether this utterance asks for the approved design to be built (Sprint 1.6).
+ *
+ * Three conditions, and the third is the one that keeps Story 27.8.3's promise:
+ *
+ * 1. a verb that asks for construction, or a whole phrase that does;
+ * 2. a subject that is the design *as a whole*;
+ * 3. **no element named.** "Build a wall here" satisfies the first two and is a
+ *    modelling command; naming a component is how a user says they mean one.
+ */
+function isRealisationRequest(utterance: string): boolean {
+  if (AUTHORING_SUBJECTS.test(utterance)) {
+    return false;
+  }
+  if (REALISATION_PHRASES.test(utterance)) {
+    return true;
+  }
+  return REALISATION_VERBS.test(utterance) && REALISATION_SUBJECTS.test(utterance);
 }

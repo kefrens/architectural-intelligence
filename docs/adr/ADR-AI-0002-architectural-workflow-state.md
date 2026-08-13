@@ -1,21 +1,22 @@
 # ADR-AI-0002: Architectural Workflow State
 
 - **Status:** Accepted
-- **Revision:** 1.2
-- **Date:** 2026-08-10
+- **Revision:** 1.3
+- **Date:** 2026-08-10; revision 1.3 accepted 2026-08-13
 - **Deciders:** ArchiSimple Project
-- **Relates to:** ADR-AI-0001 (the five artefacts), ArchiSimple ADR-0027.1 (planning pipeline, Rules 4, 7, 8, 12), ADR-0029 (Rules 2 and 3 — restated shapes), ADR-0030 (Rules 1, 2, 4, 8 — repository separation), ADR-0031 (the host's execution lane)
-- **Implemented by:** Sprint 1.2 (the projection), Sprint 1.3 (lineage and navigation)
+- **Relates to:** ADR-AI-0001 (the five artefacts), ArchiSimple ADR-0027.1 (planning pipeline, Rules 4, 7, 8, 12), ADR-0029 (Rules 2 and 3 — restated shapes), ADR-0030 (Rules 1, 2, 4, 8 — repository separation), ADR-0031 and ADR-0032 revision 2.2 (the host's execution lane, and the one realisation path)
+- **Implemented by:** Sprint 1.2 (the projection), Sprint 1.3 (lineage and navigation), Sprint 1.6 (the realisation lane — revision 1.3)
 
 ---
 
 ## Revision History
 
-| Revision | Date       | Change                                                                                                                                                                                                                  |
-| -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0      | 2026-08-10 | Initial decision. Defines the workflow-state projection, the ownership split between this repository and its host, and the eleven rules that keep the split from eroding.                                               |
-| 1.1      | 2026-08-10 | Sprint 1.3 implemented Rule 10, which is the rule this revision exists to report on. Records that the port widened with **no change in ArchiSimple**, and adds the two clauses Rule 7's enforcement turned out to need. |
-| 1.2      | 2026-08-10 | Sprint 1.4 gave the projection its **second consumer** — the context fragment a model reads. Adds Rule 13, which says what a consumer may do with it and what it may never do.                                          |
+| Revision | Date       | Change                                                                                                                                                                                                                                                                     |
+| -------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0      | 2026-08-10 | Initial decision. Defines the workflow-state projection, the ownership split between this repository and its host, and the eleven rules that keep the split from eroding.                                                                                                  |
+| 1.1      | 2026-08-10 | Sprint 1.3 implemented Rule 10, which is the rule this revision exists to report on. Records that the port widened with **no change in ArchiSimple**, and adds the two clauses Rule 7's enforcement turned out to need.                                                    |
+| 1.2      | 2026-08-10 | Sprint 1.4 gave the projection its **second consumer** — the context fragment a model reads. Adds Rule 13, which says what a consumer may do with it and what it may never do.                                                                                             |
+| **1.3**  | 2026-08-13 | BUG-008 Phase 3 adds the first lane whose subject is **not a planning stage**. Names realisation state as the host's, extends Rule 2 to say this layer never observes it, and extends Rule 8 to say what gates a non-stage lane. Adds no rule and changes no existing one. |
 
 ---
 
@@ -110,27 +111,28 @@ plausible mistake rather than an obvious one.
 
 ### Architectural Intelligence owns
 
-| Owns                                | Which means                                                                                               |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Artefact relationships**          | Which artefact derives from which, and by what provenance. The pipeline order is this layer's knowledge.  |
-| **Current-vs-stale**                | Whether an approved artefact was derived from the upstream revision now in force, transitively.           |
-| **Stage prerequisites**             | What a stage needs before it can be generated at all.                                                     |
-| **Blockers**                        | Why a stage cannot proceed, in the one vocabulary of ADR-0027.1 Rule 8.                                   |
-| **Workflow predicates**             | `matchesBrief`, `matchesProgramme`, `matchesLayout`, `matchesGeometryGraph` and everything built on them. |
-| **Conversational lane eligibility** | Whether an utterance may be classified into a stage lane. The same derivation, not a second one.          |
+| Owns                                | Which means                                                                                                                                                          |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Artefact relationships**          | Which artefact derives from which, and by what provenance. The pipeline order is this layer's knowledge.                                                             |
+| **Current-vs-stale**                | Whether an approved artefact was derived from the upstream revision now in force, transitively.                                                                      |
+| **Stage prerequisites**             | What a stage needs before it can be generated at all.                                                                                                                |
+| **Blockers**                        | Why a stage cannot proceed, in the one vocabulary of ADR-0027.1 Rule 8.                                                                                              |
+| **Workflow predicates**             | `matchesBrief`, `matchesProgramme`, `matchesLayout`, `matchesGeometryGraph` and everything built on them.                                                            |
+| **Conversational lane eligibility** | Whether an utterance may be classified into a lane. The same derivation, not a second one. Since revision 1.3 this includes a lane that is not a stage — see Rule 8. |
 
 ### The host owns
 
-| Owns                     | Which means                                                                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Proposals**            | Building the envelope is this layer's; the envelope's life after it is handed over is not.                                     |
-| **Approval state**       | `ProposalApprovalState` — `pending`, `approved`, `rejected` — lives in `@archisimple/ai-engine`.                               |
-| **The pending proposal** | `AiSessionController.pendingProposal()`. This layer never learns that a proposal was approved, only that an artefact appeared. |
-| **Session state**        | Conversations, messages, the AI workspace record.                                                                              |
-| **Artefact persistence** | The registry, the project file, revisions on disk.                                                                             |
-| **UI**                   | Every label, icon, colour, panel and dock.                                                                                     |
-| **Navigation**           | Which artefact the user is looking at. Looking at one is not a workflow transition.                                            |
-| **User interaction**     | Approve, reject, revise, edit, select — all of them are the host asking, never this layer deciding.                            |
+| Owns                          | Which means                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Proposals**                 | Building the envelope is this layer's; the envelope's life after it is handed over is not.                                                                                                                                                                                                                                |
+| **Approval state**            | `ProposalApprovalState` — `pending`, `approved`, `rejected` — lives in `@archisimple/ai-engine`.                                                                                                                                                                                                                          |
+| **The pending proposal**      | `AiSessionController.pendingProposal()`. This layer never learns that a proposal was approved, only that an artefact appeared.                                                                                                                                                                                            |
+| **Session state**             | Conversations, messages, the AI workspace record.                                                                                                                                                                                                                                                                         |
+| **Artefact persistence**      | The registry, the project file, revisions on disk.                                                                                                                                                                                                                                                                        |
+| **UI**                        | Every label, icon, colour, panel and dock.                                                                                                                                                                                                                                                                                |
+| **Navigation**                | Which artefact the user is looking at. Looking at one is not a workflow transition.                                                                                                                                                                                                                                       |
+| **User interaction**          | Approve, reject, revise, edit, select — all of them are the host asking, never this layer deciding.                                                                                                                                                                                                                       |
+| **Realisation state** _(1.3)_ | Whether an approved Geometry Specification has been **built** — the `RealisationRecord`, the realisation guard's verdict, and the outcome of any attempt. ArchiSimple ADR-0032 revision 2.2 assigns all of it to the host, behind one entry point. This layer neither derives it nor stores it, and cannot read it today. |
 
 The line is drawn between **what the pipeline knows** and **what the user is
 doing**. Staleness is a property of two artefacts and their provenance, so it is
@@ -238,6 +240,48 @@ merges its own `pendingProposal()` on top of this projection. That merge is a
 host concern precisely because the host is the only participant that can be
 right about it.
 
+### Rule 2, extended --- realisation is not observed at all (revision 1.3)
+
+Rule 2 says approval is observed through its consequence. Realisation has no
+consequence this layer can observe, and revision 1.3 states the stronger form
+rather than leaving it to be inferred:
+
+**An artefact becoming readable means it was approved. It never means it was
+built.** The projection reports `complete` when all five stages are approved and
+current, and `complete` is a statement about the _design_, not about the model.
+
+This is not a theoretical distinction. BUG-008 is what it costs: a user approved
+a Geometry Specification, asked for it to be built, and was told the walls had
+been created. Nothing had been. The assistant was not overreaching from a fact it
+could have checked — the fact did not exist on this side of the boundary, and the
+one thing standing between "the design is finished" and "the building exists" was
+a word.
+
+So a consumer of this projection **SHALL NOT** infer, report or imply that a
+design has been realised. Where realisation state matters, the authority is the
+host's — today through the `realisation` context fragment ArchiSimple's Sprint
+036.2b contributes, which reaches a model as context and never reaches this
+derivation.
+
+#### Why realisation state is not in the projection (revision 1.3)
+
+It is tempting to read the host's `realisation` fragment during a turn and fold
+it in. That would be wrong for a structural reason worth recording before someone
+tries it:
+
+`AiProviderRequest.context` exists **only during a message turn**. The projection
+is derived on every call and must be safe on every render (Rules 1 and 12) — an
+IA panel calls it with no request in sight. A projection that were sometimes
+enriched with realisation state and sometimes not is two answers to one question,
+which is precisely what Rule 8 exists to prevent.
+
+Realisation state can therefore enter the projection **only through a read port
+of its own**, beside `PlanningArtefactReader`. Rule 10's "widen without forcing a
+release" does not apply: the host would have to supply a new object to the
+contribution, so both repositories change and ADR-0030 Rule 8's release ordering
+holds. That is a decision, not a detail, and it belongs to the revision that
+makes it.
+
 ### Rule 3 --- Actions are what this layer can be asked to do
 
 `WORKFLOW_ACTIONS` lists the operations `ArchitecturalIntelligenceService`
@@ -322,6 +366,33 @@ a second time in `interpret`. One derivation, one answer.
 Two derivations would eventually disagree, and the disagreement would appear as
 a panel that offers a stage the conversation refuses — which is the exact class
 of bug this ADR exists to prevent, appearing inside the repository that wrote it.
+
+#### Rule 8, extended --- a lane need not be a stage (revision 1.3)
+
+Every lane through revision 1.2 asks for a planning artefact, so "lane
+eligibility" and "stage eligibility" were the same sentence. BUG-008 Phase 3 adds
+one that is not: **realisation** asks for the approved design to be built, and
+building is the host's.
+
+Such a lane is admitted on two conditions, and both keep Rule 8 intact:
+
+1. **Its gate is read from this projection like every other.** The realisation
+   lane's gate is "the Specification stage is approved and current" — a fact the
+   projection already holds. A lane gated on something the projection cannot
+   answer is a lane this layer is not entitled to open.
+2. **It carries intent, and never capability.** The lane produces the identity of
+   what the user meant — for realisation, the approved Specification's `id` and
+   `revision` — and the host decides whether that can be done and does it
+   (ADR-0032 revision 2.2: exactly one realisation path).
+
+What this layer consequently **cannot** decide is whether the design has already
+been built, which the extension to Rule 2 above states. The lane may therefore
+propose a realisation the host refuses, and that is the correct outcome: the
+refusal is authoritative and arrives as the proposal's execution result, whereas
+a guess made here would be neither.
+
+A lane meeting neither condition is not a lane. It is execution wearing a
+classifier's clothes.
 
 ### Rule 9 --- The contract crosses as plain data
 
@@ -515,7 +586,14 @@ This ADR does not define:
 - how a host renders the projection, or what an IA panel looks like
 - artefact **navigation** — which revision the user is inspecting is session state
 - the Building Assistant's guided flow
-- anything downstream of the Geometry Specification, which is ADR-0031
+- anything downstream of the Geometry Specification, which is ADR-0031 and
+  ADR-0032. Revision 1.3 refines rather than reverses this: **realisation stays
+  out of scope as a capability**, and what comes in scope is only the layer's
+  ability to say a user asked for it, and its duty never to claim it happened.
+- **whether realisation state joins the projection** (revision 1.3).
+  The extension to Rule 2 says what such a revision would have to accept — a read
+  port and a coordinated release — and deliberately does not take that decision
+  here.
 
 ---
 

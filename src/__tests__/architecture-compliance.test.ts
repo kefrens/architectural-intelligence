@@ -279,6 +279,62 @@ describe('architectural-intelligence reasons but never executes', () => {
   });
 
   /**
+   * ADR-0032 revision 2.2, asserted from this side (Sprint 1.6 — BUG-008
+   * Phase 3).
+   *
+   * "There SHALL be exactly one realisation path", and the host owns all of it.
+   * This layer may say a user asked for a build; it may not know how to perform
+   * one, and the way that stays true is that `realisation/` cannot name anything
+   * that would.
+   *
+   * The forbidden list is the host's vocabulary, taken from the rule itself: no
+   * Requests, no Build Plan, no guard, no translator, no host entry point. A
+   * violation here would not be a bug in this repository — it would be the
+   * second realisation mechanism the whole of G-8 was designed to avoid.
+   */
+  describe('realisation is expressed here and performed by the host (ADR-0032 rev 2.2)', () => {
+    const realisationSources = sources.filter((file) => file.path.startsWith('realisation/'));
+
+    it('finds the realisation sources', () => {
+      expect(realisationSources.length).toBeGreaterThan(0);
+    });
+
+    it.each(realisationSources.map((file) => file.path))(
+      '%s carries no executable realisation machinery',
+      (path) => {
+        const file = realisationSources.find((candidate) => candidate.path === path)!;
+        const body = code(file.source);
+
+        // A subject is a reference to a design. Anything below could be run.
+        expect(body).not.toMatch(/\bCommandRequest\b/);
+        expect(body).not.toMatch(/\bBuildPlan\w*\b/);
+        expect(body).not.toMatch(/\brealiseBuildPlan\w*\b/);
+        expect(body).not.toMatch(/\btranslate\w*\b/);
+        expect(body).not.toMatch(/\bcheckRealisationAllowed\b/);
+        expect(body).not.toMatch(/\brealiseApprovedSpecification\s*\(/);
+        expect(body).not.toMatch(/\bRealisationSink\b/);
+        expect(importsOf(file.source)).not.toContain('@archisimple/automation-api');
+      }
+    );
+
+    /**
+     * The other half of the invariant: the identity crosses, and only the
+     * identity. A third field on the subject is how a plan would arrive one
+     * property at a time.
+     */
+    it('the proposal subject is the design identity and nothing else', () => {
+      const proposal = realisationSources.find(
+        (file) => file.path === 'realisation/realisation-proposal.ts'
+      )!;
+
+      expect(proposal.source).toMatch(/interface RealisationSubject/);
+      const subject = /interface RealisationSubject\s*{([^}]*)}/.exec(proposal.source)?.[1] ?? '';
+      const fields = [...subject.matchAll(/readonly\s+(\w+)\s*:/g)].map((match) => match[1]);
+      expect(fields).toEqual(['specificationId', 'revision']);
+    });
+  });
+
+  /**
    * ADR-AI-0002 Rule 1, asserted (Sprint 1.2, Story 1.2.19).
    *
    * The workflow state is a **projection**, and the single most attractive

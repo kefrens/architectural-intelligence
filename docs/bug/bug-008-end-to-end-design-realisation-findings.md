@@ -1,6 +1,6 @@
 # BUG-008 — Findings and fix plan
 
-> **Status:** Investigated. **Phases 1 and 2 landed** in `archisimple`; Phase 3 (this repository) is next
+> **Status:** Investigated. **Phases 1 and 2 landed** in `archisimple`; **Phase 3 part one landed here** (Sprint 1.6). One item remains — Sprint 1.7
 > **Investigated at:** `architectural-intelligence` `53388df` (v0.2.0), `archisimple` `2d9fc6a`
 > **Answers:** [BUG-008](bug-008-end-to-end-design-realisation.md) §5 (hypotheses) and §6 (method)
 
@@ -40,17 +40,31 @@ no longer indistinguishable from a crash.
 The realisation **tool** is contributed by the host, for the reason §4 gave:
 everything it must know is state `apps/web` owns.
 
-**Phase 3 is this repository's, and is unstarted.** Two items, both from §5:
+**Phase 3, part one, is implemented here** — Sprint 1.6, "realisation intent
+lane" (`docs/sprints/sprint-001.6-realisation-intent-lane.md`), with
+**ADR-AI-0002 revision 1.3**.
 
-- a realisation lane in the deterministic classifier, so "build it" stops falling
-  into Direct Execution — today the model reaches the tool because the tool is
-  offered, not because a lane routes to it;
-- the realisation fact in `deriveWorkflowState`, which needs a read port —
-  the one genuinely new cross-repository contract, and the one that deserves an
-  ADR-AI.
+"Build it" after an approved Geometry Specification is now a lane of its own —
+the ninth, and the first whose subject is not a planning stage. It produces a
+`Proposal` carrying `{ specificationId, revision }` and nothing executable; the
+host builds it through the one entry point. The lane is checked **before every
+stage lane**, because the review measured what the eight existing ones did with
+these utterances first: _"realise the design"_ regenerated the Geometry Graph,
+_"create the building from this specification"_ regenerated the Specification,
+and _"build the apartment"_ started a briefing interview — every stage stays
+eligible once approved, so in exactly the project where a user asks to build, the
+lanes that redesign are still open.
+
+**What remains is one item, and it is a decision: Sprint 1.7.** This layer still
+cannot see whether the design has already been built, so a repeat request
+produces a proposal the host's guard refuses on approval rather than a clean
+"already built" answer. ADR-AI-0002 revision 1.3 records why closing that needs a
+**read port** rather than the `realisation` context fragment: the fragment exists
+only during a message turn, and the projection must answer on every render.
 
 Phase 3 consumes a released `@archisimple/ai-engine` (ADR-0030 Rule 8); in the
-linked local workspace that is a build order rather than a publish order.
+linked local workspace that is a build order rather than a publish order, which
+is how Sprint 1.6 shipped without one.
 
 ---
 
@@ -254,7 +268,7 @@ building.
 6. Sprint 036.3's refusal/failure UX is where the per-blocker wording belongs;
    this phase only has to carry the distinction, not present it.
 
-### Phase 3 — the conversational surface (`architectural-intelligence`)
+### Phase 3 — the conversational surface (`architectural-intelligence`) — **part one done, Sprint 1.6**
 
 7. A ninth lane — a realisation request — gated on an approved, unrealised
    Specification, so the deterministic classifier answers truthfully too rather

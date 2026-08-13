@@ -320,6 +320,20 @@ export {
   type RequestLane
 } from './brief/index.js';
 
+/**
+ * Realisation (Sprint 1.6 — BUG-008 Phase 3).
+ *
+ * The proposal that asks the host to build the approved design. It carries the
+ * design's identity and nothing executable: ArchiSimple ADR-0032 revision 2.2
+ * keeps the reader, the guard, the translator, the Operation and the record
+ * behind one host entry point, and this package holds none of them.
+ */
+export {
+  describeRealisation,
+  toRealisationProposal,
+  type RealisationSubject
+} from './realisation/index.js';
+
 export {
   ARCHITECTURAL_CONTEXT_PROVIDER_ID,
   createArchitecturalContextProvider,

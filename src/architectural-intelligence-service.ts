@@ -153,6 +153,7 @@ import {
   type PlanningArtefactReader
 } from './artefacts/planning-artefact-reader.js';
 import { toProposal } from './proposal/proposal-builder.js';
+import { describeRealisation, toRealisationProposal } from './realisation/index.js';
 import {
   answerArchitecturalQuestion,
   type ArchitecturalAnswer,
@@ -349,7 +350,13 @@ export class ArchitecturalIntelligenceService {
       hasApprovedGeometry: this.isEligible(workflow, PLANNING_STAGES.Specification),
       // Sprint 1.3, and a different question from the four above: whether there
       // is a Brief to change, not whether the stage below it can be built.
-      hasBriefToRevise: stageState(workflow, PLANNING_STAGES.Brief)?.approved !== undefined
+      hasBriefToRevise: stageState(workflow, PLANNING_STAGES.Brief)?.approved !== undefined,
+      // Sprint 1.6, and the same *kind* of question as the one above it: whether
+      // there is a design here to build. Staleness is deliberately not part of
+      // the gate — a stale design is still the one the user meant, and the
+      // branch below answers it with the reason rather than the lane closing.
+      hasApprovedSpecification:
+        stageState(workflow, PLANNING_STAGES.Specification)?.approved !== undefined
     });
     const intent = recognizeIntent(utterance);
 
@@ -359,6 +366,10 @@ export class ArchitecturalIntelligenceService {
 
     if (classification.lane === REQUEST_LANES.BriefRevision) {
       return { ...this.reviseApprovedBrief(utterance, intent), classification };
+    }
+
+    if (classification.lane === REQUEST_LANES.Realisation) {
+      return { ...this.proposeRealisation(workflow, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.SpecificationGeneration) {
@@ -617,6 +628,54 @@ export class ArchitecturalIntelligenceService {
       message: describeSpecification(specification),
       proposal: toGeometrySpecificationProposal(specification),
       specification
+    };
+  }
+
+  /**
+   * Offers the approved design to be built (Sprint 1.6 — BUG-008 Phase 3).
+   *
+   * The ninth lane's whole implementation, and it is short because almost
+   * everything realisation involves belongs to the host: the Specification
+   * reader, the guard, the translator, the atomic Operation and the record are
+   * all behind ArchiSimple's one entry point (ADR-0032 revision 2.2). What is
+   * left here is naming *which* design the user meant.
+   *
+   * ## Three answers, and none of them is "it was built"
+   *
+   * A **stale** design is refused with the reason: its geometry has been revised
+   * since, so building it would build something the project has moved past. That
+   * is this layer's own knowledge — staleness is what the projection exists to
+   * compute — and not a second realisation guard, which would be the host's
+   * decision taken here.
+   *
+   * Whether the design has **already been built** is not among the three,
+   * because this layer cannot know it (ADR-AI-0002 revision 1.3, extension to
+   * Rule 2). A proposal for a design already built is refused by the host on
+   * approval, and its refusal is authoritative in a way a guess here would not
+   * be.
+   */
+  private proposeRealisation(
+    workflow: ArchitecturalWorkflowState,
+    intent: ArchitecturalIntent
+  ): ArchitecturalResponse {
+    const state = stageState(workflow, PLANNING_STAGES.Specification);
+    const approved = state?.approved;
+    if (approved === undefined) {
+      // Unreachable: the lane is gated on this artefact existing. Present for
+      // the type, and for the same reason the four stage lanes above carry one.
+      return { intent, message: NO_APPROVED_SPECIFICATION };
+    }
+
+    if (state?.stale !== undefined) {
+      const blocker = staleDesignToBuild(approved.revision);
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    const subject = { specificationId: approved.id, revision: approved.revision };
+    return {
+      intent,
+      message: describeRealisation(subject),
+      proposal: toRealisationProposal(subject)
     };
   }
 
@@ -1031,6 +1090,26 @@ const BRIEF_ALREADY_SAYS_THAT = 'The brief already says that, so there is nothin
 /** What a revision request gets when the project holds no Brief (Sprint 1.3). */
 const NO_BRIEF_TO_REVISE =
   'There is no approved brief to revise yet. Tell me what you want to build and I will start one.';
+
+/** What a realisation request gets when the project holds no Specification (Sprint 1.6). */
+const NO_APPROVED_SPECIFICATION =
+  'There is no approved design to build yet. Approve a geometry specification first and I will offer to build it.';
+
+/**
+ * What a realisation request gets when the design it names is out of date
+ * (Sprint 1.6).
+ *
+ * `Superseded` rather than `Unsupported`: the input exists and a later revision
+ * upstream replaced what it was derived from, which is the reason that member
+ * was added for (ADR-AI-0002 Rule 4, ADR-0027.1 Rule 8).
+ */
+function staleDesignToBuild(revision: number): PlanBlocker {
+  return {
+    reason: PLAN_BLOCKER_REASONS.Superseded,
+    message: `Revision ${revision} of the specification is out of date — the design it was derived from has been revised since. Building it would build something the project has already moved past.`,
+    suggestions: ['Regenerate the specification, then ask me to build it.']
+  };
+}
 
 /** What a construction request gets when no Geometry Graph has been approved (Sprint 1.2). */
 const NO_APPROVED_GEOMETRY =

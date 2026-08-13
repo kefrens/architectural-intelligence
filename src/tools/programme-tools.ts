@@ -22,6 +22,8 @@
 
 import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
+import { PLANNING_STAGES } from '../planning/planning-stage.js';
+import { PLANNING_TOOL_NAMES } from './planning-tool-names.js';
 
 export function createProgrammeToolDefinition(
   intelligence: ArchitecturalIntelligenceService
@@ -33,7 +35,7 @@ export function createProgrammeToolDefinition(
     schema: {
       type: 'function',
       function: {
-        name: 'planning_generateProgramme',
+        name: PLANNING_TOOL_NAMES[PLANNING_STAGES.Programme],
         description:
           'Turns the approved architectural brief into a space programme: which spaces the building contains, how large each should be, and which belong together. Call this when the user asks for the programme, the spaces, or what comes next after approving a brief. Takes no arguments — every space and area is derived from the approved brief, not from you.',
         parameters: { type: 'object', properties: {}, required: [] }

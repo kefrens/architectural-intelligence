@@ -29,16 +29,20 @@ import {
   BRIEF_TOPICS,
   createBrief,
   reviseBrief,
+  withRelationship,
   withRequirement,
   type ArchitecturalBrief,
   type BriefRequirement,
-  type DesiredSpace
+  type BriefRequirementSource,
+  type DesiredSpace,
+  type SpaceRelationship
 } from './architectural-brief.js';
 import {
   desiredSpacesFrom,
   readBareBoolean,
   readBareCount,
-  readBriefTopics
+  readBriefTopics,
+  readSpaceRelationships
 } from './brief-topics.js';
 import { MANDATORY_BRIEF_TOPICS, type RequestClassification } from './request-classification.js';
 
@@ -76,6 +80,138 @@ const DEFAULTED_TOPICS: readonly {
     assumption: 'No step-free requirement, since none was mentioned.'
   }
 ];
+
+/**
+ * Topics the deterministic reader may supply when a caller left them out
+ * (Bug 003).
+ *
+ * `assembleBriefFromFields` built requirements from the tool call and nothing
+ * else, so a topic the model did not pass simply did not exist. "Build me a
+ * 100m2 appartment" produced a Brief with no total area, and the Space Programme
+ * — correctly, and uselessly — reported that no total was stated and sized the
+ * dwelling from its own table. The number was in the sentence the whole time;
+ * {@link readBriefTopics} finds it, and only the model path never asked.
+ *
+ * ## Why a subset, and why these four
+ *
+ * The reader is deliberately permissive — `Budget` matches a bare currency
+ * amount, `Garage` matches the word in any clause including one that was not
+ * about this building. Filling a gap from a loose pattern is a worse failure
+ * than leaving it open, because an invented requirement is not visibly missing.
+ *
+ * These four are the ones whose patterns demand an explicit number next to an
+ * explicit noun, and they are also the four a Programme cannot be honest
+ * without. Everything else stays the model's job, and stays absent when the
+ * model omits it.
+ *
+ * The backstop only ever *fills*. A topic the caller supplied is the caller's,
+ * whatever the sentence says — the model read the whole conversation and this
+ * reads one message.
+ */
+const BACKSTOP_TOPICS: readonly string[] = [
+  BRIEF_TOPICS.TotalArea,
+  BRIEF_TOPICS.Storeys,
+  BRIEF_TOPICS.Bedrooms,
+  BRIEF_TOPICS.Bathrooms
+];
+
+/** The loose requirement shape both field-taking entry points accept. */
+interface SuppliedRequirement {
+  readonly topic: string;
+  readonly value: string | number | boolean;
+  readonly statement?: string;
+  readonly source?: BriefRequirementSource;
+}
+
+/**
+ * Completes a caller's reading of the user's message with the topics
+ * {@link BACKSTOP_TOPICS} allows and the caller did not state.
+ *
+ * Applied to what the *caller supplied*, before any folding, so everything
+ * downstream — defaults, revision, change detection — behaves exactly as it does
+ * for a caller who passed the topic itself. That is what keeps the two paths
+ * {@link assembleBrief} and {@link assembleBriefFromFields} in agreement, which
+ * this module's header has claimed since Sprint 27.8.
+ */
+function withBackstopTopics(
+  supplied: readonly SuppliedRequirement[],
+  texts: readonly (string | undefined)[]
+): readonly SuppliedRequirement[] {
+  const stated = new Set(supplied.map((requirement) => requirement.topic));
+  const filled: SuppliedRequirement[] = [];
+
+  for (const text of texts) {
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    for (const requirement of readBriefTopics(text)) {
+      if (!BACKSTOP_TOPICS.includes(requirement.topic) || stated.has(requirement.topic)) {
+        continue;
+      }
+      stated.add(requirement.topic);
+      filled.push(requirement);
+    }
+  }
+
+  return filled.length === 0 ? supplied : [...supplied, ...filled];
+}
+
+/**
+ * Every text the backstop may read, in precedence order (Bug 005).
+ *
+ * The user's own message first, then the model's own words for this Brief.
+ *
+ * Reading the model's words back is not redundant, and the conversation that
+ * exposed Bug 005 is why. The first `planning_captureBrief` omitted `storeys`,
+ * so the host asked; the user answered **"single storey"**; the model called the
+ * tool again. At that moment `userMessage` was "single storey" — the 100 m² was
+ * two turns behind, and a backstop reading only the latest message recovers
+ * nothing.
+ *
+ * What *did* still carry it was the model's own objective, inside the same tool
+ * call: "design a 100m2 apartment with 2 bedrooms, 1 bathroom, and a small
+ * office". A model that read the requirement well enough to paraphrase it and
+ * then failed to put it in a numeric argument has still told us the number.
+ *
+ * `BACKSTOP_TOPICS` is what makes reading a paraphrase safe: those four patterns
+ * need an explicit number beside an explicit noun, so a restatement either
+ * contains the figure or matches nothing.
+ */
+function backstopTexts(fields: {
+  readonly userMessage?: string;
+  readonly utterance?: string;
+  readonly objectives?: readonly string[];
+}): readonly (string | undefined)[] {
+  return [fields.userMessage, fields.utterance, ...(fields.objectives ?? [])];
+}
+
+/**
+ * Relationships from a caller's fields, completed by what the sentence plainly
+ * says (Bug 004, ADR-AI-0003 Rule 7).
+ *
+ * The same asymmetry the topic backstop uses, and for the same reason: the
+ * deterministic reader goes in first and the caller's own relationships land on
+ * top, so a pair the model stated wins and a pair it missed is still captured.
+ */
+function mergedRelationships(
+  existing: readonly SpaceRelationship[],
+  supplied: readonly SpaceRelationship[],
+  texts: readonly (string | undefined)[]
+): readonly SpaceRelationship[] {
+  let result = existing;
+  for (const text of texts) {
+    if (text === undefined || text.trim().length === 0) {
+      continue;
+    }
+    for (const read of readSpaceRelationships(text)) {
+      result = withRelationship(result, read);
+    }
+  }
+  for (const relationship of supplied) {
+    result = withRelationship(result, relationship);
+  }
+  return result;
+}
 
 /** Applies every default the requirements do not already cover. */
 function withDefaults(requirements: readonly BriefRequirement[]): {
@@ -139,6 +275,7 @@ export function assembleBrief(options: AssembleBriefOptions): ArchitecturalBrief
     utterance: options.utterance,
     objectives: [objectiveFrom(options.utterance)],
     desiredSpaces: desiredSpacesFrom(options.utterance, requirements),
+    relationships: readSpaceRelationships(options.utterance),
     requirements,
     assumptions,
     openQuestions: [],
@@ -160,10 +297,185 @@ export function startBriefDraft(options: AssembleBriefOptions): ArchitecturalBri
     utterance: options.utterance,
     objectives: [objectiveFrom(options.utterance)],
     desiredSpaces: desiredSpacesFrom(options.utterance, stated),
+    relationships: readSpaceRelationships(options.utterance),
     requirements: stated,
     assumptions: [],
     openQuestions: options.classification.missing,
     ...(options.now === undefined ? {} : { now: options.now })
+  });
+}
+
+/**
+ * The next revision of an **approved** Brief, from what the user just said
+ * (Sprint 1.3, Story 1.3.5 — ADR-0027.1 Rule 4).
+ *
+ * Until this sprint there was no such path. A user who re-described their
+ * building after approving a Brief went through {@link assembleBrief}, which
+ * mints a **new id at revision 1** — a second lineage rather than a second
+ * revision. Staleness was still detected downstream, because `matchesBrief`
+ * compares the id as well as the revision, but the record of what the user
+ * approved *first* was disconnected from what they approved instead, which is
+ * the one thing a Brief exists to preserve.
+ *
+ * ## A patch, not a replacement
+ *
+ * Topics stated in the new utterance override their topic; everything else is
+ * carried forward **with its original `source`**, so a requirement the user
+ * stated three turns ago is not quietly downgraded to an assumption. A user
+ * correcting the bathroom count should not lose the storey count they gave
+ * earlier, and a replacement would take it.
+ *
+ * `objectives` are carried forward too: "actually make it 4 bedrooms" is not a
+ * statement about what the building is for, and recomputing the objective from
+ * it would replace "A family home" with the correction that changed one number.
+ * The revision changes requirements; the point of the building is unchanged
+ * until the user says otherwise.
+ *
+ * `utterance` **is** replaced, because it is the sentence *this* revision was
+ * built from. The previous one keeps the previous words — that is what the
+ * lineage is for.
+ *
+ * Answers `undefined` when the utterance moves nothing: a request that restates
+ * what the Brief already says is not a revision, and returning revision n+1
+ * identical to revision n would be supersession theatre. The caller treats it as
+ * a fresh request instead, exactly as {@link answerClarification}'s caller does.
+ */
+export function reviseBriefFrom(
+  approved: ArchitecturalBrief,
+  utterance: string
+): ArchitecturalBrief | undefined {
+  return reviseBriefFromFields(approved, {
+    utterance,
+    requirements: readBriefTopics(utterance)
+  });
+}
+
+/**
+ * The one folding rule (Sprint 1.5, Story 1.5.1 — Bug 002).
+ *
+ * Three things can now produce a Brief for a project that already has one: a
+ * `planning_captureBrief` call, a design request that arrives without a revision
+ * cue, and a clarification dialogue that completes. Before this sprint each of
+ * them minted a **new lineage**, and Sprint 1.3's integrity check then reported
+ * the project as ambiguous — correctly, and fatally, since the blocker leaves no
+ * stage eligible and no way back.
+ *
+ * So all three fold through here. Two readers sit in front of it —
+ * {@link reviseBriefFrom} for an utterance, the tool for structured fields — and
+ * neither holds an opinion about what "the same Brief, changed" means.
+ *
+ * ## What folding is
+ *
+ * Settled by Story 1.3.5 and unchanged: a stated topic **overrides its topic**,
+ * everything else is carried forward **with its original `source`** so a
+ * requirement the user stated does not quietly become an assumption, desired
+ * spaces are merged, and `objectives` are carried forward because a correction is
+ * not a new purpose.
+ *
+ * `utterance` is replaced only when the caller has one. A tool call carries
+ * structured fields and no sentence of its own, so the Brief keeps the words it
+ * was first described with rather than losing them to a re-capture.
+ *
+ * @returns `undefined` when nothing moved — the caller answers `NothingToDo`
+ * rather than superseding revision _n_ with an identical revision _n+1_.
+ */
+export function reviseBriefFromFields(
+  approved: ArchitecturalBrief,
+  fields: {
+    readonly utterance?: string;
+    /** The same loose shape {@link assembleBriefFromFields} accepts, so both readers agree. */
+    readonly requirements?: readonly SuppliedRequirement[];
+    readonly spaces?: readonly DesiredSpace[];
+    readonly relationships?: readonly SpaceRelationship[];
+    /** The model's own words for this Brief, also read by the backstop (Bug 005). */
+    readonly objectives?: readonly string[];
+    /**
+     * The user's own words, for {@link withBackstopTopics} (Bug 003). Distinct
+     * from `utterance`, which is what the Brief quotes back: a caller may have a
+     * message to re-read without having a sentence worth replacing the Brief's
+     * own with.
+     */
+    readonly userMessage?: string;
+  }
+): ArchitecturalBrief | undefined {
+  let requirements = approved.requirements;
+  for (const supplied of withBackstopTopics(fields.requirements ?? [], backstopTexts(fields))) {
+    requirements = withRequirement(requirements, {
+      topic: supplied.topic,
+      value: supplied.value,
+      statement: supplied.statement ?? `${supplied.topic}: ${String(supplied.value)}`,
+      // A topic the caller restated is one the user stated, whatever the Brief
+      // assumed before. Topics they did not mention keep the source they had —
+      // that is what `withRequirement` replacing by topic gives us.
+      source: supplied.source ?? BRIEF_REQUIREMENT_SOURCES.Stated
+    });
+  }
+
+  // Change is judged on what the caller *supplied*, never on the merged result.
+  // `mergeSpaces` also derives spaces from the requirements — a brief whose
+  // desired spaces named only bedrooms gains a bathroom from the bathroom count
+  // — and that enrichment is not the user telling us something new. Comparing
+  // the merged list would make every identical re-capture look like a change,
+  // which is exactly the loop Story 1.5.3 exists to end.
+  const addedSpaces = (fields.spaces ?? []).filter(
+    (space) =>
+      !approved.desiredSpaces.some(
+        (existing) => existing.name === space.name && existing.count === space.count
+      )
+  );
+
+  // A relationship the Brief did not already hold is the user telling us
+  // something new, exactly as a changed requirement is (Bug 004).
+  const relationships = mergedRelationships(
+    approved.relationships,
+    fields.relationships ?? [],
+    backstopTexts(fields)
+  );
+
+  if (
+    !requirementsChanged(approved.requirements, requirements) &&
+    addedSpaces.length === 0 &&
+    !relationshipsChanged(approved.relationships, relationships)
+  ) {
+    return undefined;
+  }
+
+  return reviseBrief(approved, {
+    ...(fields.utterance === undefined ? {} : { utterance: fields.utterance }),
+    requirements,
+    relationships,
+    desiredSpaces: mergeSpaces([...approved.desiredSpaces, ...addedSpaces], requirements)
+  });
+}
+
+/** Whether any pair gained, lost or changed its kind. Sources are not compared. */
+function relationshipsChanged(
+  before: readonly SpaceRelationship[],
+  after: readonly SpaceRelationship[]
+): boolean {
+  if (before.length !== after.length) {
+    return true;
+  }
+  const key = (relationship: SpaceRelationship): string =>
+    [relationship.from.toLowerCase(), relationship.to.toLowerCase()].sort().join('|');
+
+  return after.some((relationship) => {
+    const previous = before.find((candidate) => key(candidate) === key(relationship));
+    return previous === undefined || previous.kind !== relationship.kind;
+  });
+}
+
+/** Whether any topic gained, lost or changed a value. Sources are not compared. */
+function requirementsChanged(
+  before: readonly BriefRequirement[],
+  after: readonly BriefRequirement[]
+): boolean {
+  if (before.length !== after.length) {
+    return true;
+  }
+  return after.some((requirement) => {
+    const previous = before.find((candidate) => candidate.topic === requirement.topic);
+    return previous === undefined || previous.value !== requirement.value;
   });
 }
 
@@ -212,6 +524,10 @@ export function answerClarification(draft: ArchitecturalBrief, answer: string): 
   const complete = withDefaults(requirements);
   return reviseBrief(draft, {
     requirements: complete.requirements,
+    // A user answering "how many bathrooms?" may say more than was asked, and a
+    // relationship stated in that answer is as explicit as one in the first
+    // sentence (Bug 004, Rule 7).
+    relationships: mergedRelationships(draft.relationships, [], [answer]),
     assumptions: [...draft.assumptions, ...complete.assumptions],
     desiredSpaces: mergeSpaces(draft.desiredSpaces, complete.requirements),
     openQuestions: []
@@ -224,7 +540,10 @@ function bareAnswerFor(topic: string, answer: string): BriefRequirement | undefi
 
   if (countable) {
     const count = readBareCount(answer);
-    if (count === undefined) {
+    // "none" answers a bathroom count; it does not answer a storey count, and a
+    // brief saying "0 storeys" is not a building (Bug 006). Left unanswered, the
+    // question is simply asked again.
+    if (count === undefined || (topic === BRIEF_TOPICS.Storeys && count < 1)) {
       return undefined;
     }
     const noun = topic === BRIEF_TOPICS.Storeys ? 'storey' : topic.replace(/s$/, '');
@@ -245,6 +564,34 @@ function bareAnswerFor(topic: string, answer: string): BriefRequirement | undefi
         value: flag,
         source: BRIEF_REQUIREMENT_SOURCES.Answered
       };
+}
+
+/**
+ * The spaces a bedroom or bathroom *count* names, for a caller that listed
+ * neither (Bug 003).
+ *
+ * `planning_captureBrief` exposes bedrooms and bathrooms as dedicated numeric
+ * arguments *and* accepts a `spaces` array, so a model that passes
+ * `bedrooms: 3` and lists only the kitchen has answered the question it was
+ * asked. Before this, that Brief carried one desired space, and the Space
+ * Programme built a three-bedroom house with no bedrooms in it — the count was
+ * in `requirements` where nothing downstream reads it as a space.
+ *
+ * The offline path never had this gap: `assembleBrief` runs `desiredSpacesFrom`
+ * over the utterance, which derives exactly these two from the counts. Passing
+ * an empty text reuses that derivation and *only* that — re-reading the space
+ * names would let `NAMED_SPACES` match inside a compound the user chose, turning
+ * "dining/lounge" into a second, separate living room.
+ */
+function withCountedSpaces(
+  supplied: readonly DesiredSpace[],
+  requirements: readonly BriefRequirement[]
+): readonly DesiredSpace[] {
+  const has = (name: string): boolean =>
+    supplied.some((space) => space.name.trim().toLowerCase().replace(/s$/, '') === name);
+
+  const counted = desiredSpacesFrom('', requirements).filter((space) => !has(space.name));
+  return counted.length === 0 ? supplied : [...supplied, ...counted];
 }
 
 /**
@@ -277,20 +624,19 @@ export function assembleBriefFromFields(fields: {
   readonly utterance: string;
   readonly objectives?: readonly string[];
   readonly spaces?: readonly DesiredSpace[];
-  readonly requirements?: readonly {
-    readonly topic: string;
-    readonly value: string | number | boolean;
-    readonly statement?: string;
-  }[];
+  readonly requirements?: readonly SuppliedRequirement[];
+  readonly relationships?: readonly SpaceRelationship[];
+  /** The user's own words, for {@link withBackstopTopics} (Bug 003). */
+  readonly userMessage?: string;
   readonly now?: number;
 }): ArchitecturalBrief {
   let requirements: readonly BriefRequirement[] = [];
-  for (const supplied of fields.requirements ?? []) {
+  for (const supplied of withBackstopTopics(fields.requirements ?? [], backstopTexts(fields))) {
     requirements = withRequirement(requirements, {
       topic: supplied.topic,
       value: supplied.value,
       statement: supplied.statement ?? `${supplied.topic}: ${String(supplied.value)}`,
-      source: BRIEF_REQUIREMENT_SOURCES.Stated
+      source: supplied.source ?? BRIEF_REQUIREMENT_SOURCES.Stated
     });
   }
 
@@ -307,7 +653,8 @@ export function assembleBriefFromFields(fields: {
       fields.objectives !== undefined && fields.objectives.length > 0
         ? fields.objectives
         : [objectiveFrom(fields.utterance)],
-    desiredSpaces: fields.spaces ?? [],
+    desiredSpaces: withCountedSpaces(fields.spaces ?? [], finished?.requirements ?? requirements),
+    relationships: mergedRelationships([], fields.relationships ?? [], backstopTexts(fields)),
     requirements: finished?.requirements ?? requirements,
     assumptions: finished?.assumptions ?? [],
     openQuestions,

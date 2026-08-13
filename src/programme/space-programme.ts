@@ -32,6 +32,13 @@
 
 import { createUuid } from '@archisimple/shared';
 import type { EnrichedArtefact } from '../artefacts/enriched-artefact.js';
+// Directly, not through the barrel: this is the first time the Programme
+// *artefact* names a Brief type, and the narrow path keeps it obvious that the
+// dependency is one enum and nothing else.
+import {
+  BRIEF_REQUIREMENT_SOURCES,
+  type BriefRequirementSource
+} from '../brief/architectural-brief.js';
 
 /** The artefact kind, as carried by `ProposalArtefact.kind` and stored in the project file. */
 export const SPACE_PROGRAMME_KIND = 'space-programme';
@@ -131,6 +138,23 @@ export interface IntendedAdjacency {
   readonly strength: AdjacencyStrength;
   /** Plain language, for the review card: "so the kitchen serves the dining room". */
   readonly reason: string;
+  /**
+   * Who said this (Bug 004, ADR-AI-0003 Rule 4).
+   *
+   * Reuses the Brief's `BriefRequirementSource` — `stated`, `answered`,
+   * `assumed` — rather than adding a fourth provenance vocabulary beside
+   * {@link AREA_SOURCES} and {@link SPACE_PRIORITIES}. It is the same question
+   * with the same three answers, and this artefact already derives priorities
+   * from that record.
+   *
+   * Without it the rule that matters cannot be stated: a relationship the user
+   * demanded and one `ADJACENCY_TEMPLATE` assumed are otherwise indistinguishable,
+   * and the review card presents a template's opinion in the user's own voice.
+   *
+   * Everything the platform derives is `assumed`, which is also the right value
+   * for a programme deserialised from a project file written before this existed.
+   */
+  readonly source: BriefRequirementSource;
 }
 
 /** The Brief this programme was derived from (Rules 4 and 12). */
@@ -204,13 +228,28 @@ export function createProgramme(input: {
   };
 }
 
-/** The next revision (Rule 4): same identity, incremented revision, nothing mutated. */
+/**
+ * The next revision (Rule 4): same identity, incremented revision, nothing mutated.
+ *
+ * `sourceBrief` and `contributedBy` joined the patch in Sprint 1.3, when
+ * regenerating a stage became a revision of it rather than a second artefact
+ * (Story 1.3.7). A revision regenerated from a *newer* upstream revision must
+ * record that upstream, or its provenance would claim it came from the one it
+ * superseded — and staleness would then be computed against a lie.
+ */
 export function reviseProgramme(
   programme: SpaceProgramme,
   patch: Partial<
     Pick<
       SpaceProgramme,
-      'spaces' | 'adjacencies' | 'totalArea' | 'assumptions' | 'warnings' | 'objectives'
+      | 'spaces'
+      | 'adjacencies'
+      | 'totalArea'
+      | 'assumptions'
+      | 'warnings'
+      | 'objectives'
+      | 'sourceBrief'
+      | 'contributedBy'
     >
   >
 ): SpaceProgramme {
@@ -222,6 +261,64 @@ export function programmeSpace(
   spaceId: string
 ): ProgrammeSpace | undefined {
   return programme.spaces.find((space) => space.id === spaceId);
+}
+
+/**
+ * Re-uses the approved programme's space ids for the spaces a regeneration
+ * produced again (Bug 005).
+ *
+ * `synthesizeProgramme` mints a fresh uuid for every space on every call, so
+ * revision *n+1* of an otherwise identical programme shared not one id with
+ * revision *n*. Two things break because of that.
+ *
+ * The first is visible: nothing can tell whether a regeneration changed
+ * anything, because no two syntheses are ever equal. The churn Bug 005 is about
+ * could not be detected, only endured.
+ *
+ * The second is worse and was not reported. A Layout Plan's nodes **are**
+ * programme space ids (`layout-synthesis.ts`), as are a Geometry Graph's
+ * polygons through it. Re-approving a programme with new ids therefore left
+ * every downstream artefact pointing at spaces that no longer existed —
+ * detectable as staleness through `matchesProgramme`, but dangling in a way that
+ * staleness does not describe: not "derived from an older revision", simply
+ * *wrong*.
+ *
+ * Matched by name, one previous id per next space, because a name is what a
+ * programme space is identified by everywhere else in this layer — the implied
+ * space check and the adjacency roles both match on it. A space the brief no
+ * longer asks for takes its id out of circulation; a genuinely new one keeps the
+ * fresh uuid it was given.
+ */
+export function withPreviousSpaceIds(
+  next: SpaceProgramme,
+  previous: SpaceProgramme
+): SpaceProgramme {
+  const available = new Map<string, string[]>();
+  for (const space of previous.spaces) {
+    const key = space.name.trim().toLowerCase();
+    available.set(key, [...(available.get(key) ?? []), space.id]);
+  }
+
+  const reassigned = new Map<string, string>();
+  const spaces = next.spaces.map((space) => {
+    const queue = available.get(space.name.trim().toLowerCase());
+    const inherited = queue?.shift();
+    if (inherited === undefined) {
+      return space;
+    }
+    reassigned.set(space.id, inherited);
+    return { ...space, id: inherited };
+  });
+
+  // Adjacency carries space ids, so it has to move with them or it would name
+  // spaces this programme no longer contains.
+  const adjacencies = next.adjacencies.map((adjacency) => ({
+    ...adjacency,
+    fromSpaceId: reassigned.get(adjacency.fromSpaceId) ?? adjacency.fromSpaceId,
+    toSpaceId: reassigned.get(adjacency.toSpaceId) ?? adjacency.toSpaceId
+  }));
+
+  return { ...next, spaces, adjacencies };
 }
 
 /** A programme with at least one space. An empty one is never offered for approval. */
@@ -272,17 +369,29 @@ export function summarizeProgramme(programme: SpaceProgramme): string {
 
   lines.push(`**Total** — ${programme.totalArea} m²`, '');
 
-  const stated = programme.adjacencies.filter(
-    (adjacency) => adjacency.strength !== ADJACENCY_STRENGTHS.Avoid
+  const name = (spaceId: string): string => programmeSpace(programme, spaceId)?.name ?? spaceId;
+  const describe = (adjacency: IntendedAdjacency): string =>
+    `- ${name(adjacency.fromSpaceId)} ${adjacency.strength === ADJACENCY_STRENGTHS.Avoid ? '⇹' : '↔'} ${name(adjacency.toSpaceId)} — ${adjacency.reason}`;
+
+  // What the user asked for is listed first and separately from what this
+  // artefact assumed (Bug 004, ADR-AI-0003 Rule 4). A separation is shown here
+  // too: it was filtered out of the card entirely before, which was tolerable
+  // while every `avoid` was the platform's own idea, and is not once a user can
+  // state one.
+  const asked = programme.adjacencies.filter(
+    (adjacency) => adjacency.source !== BRIEF_REQUIREMENT_SOURCES.Assumed
   );
-  if (stated.length > 0) {
-    lines.push('**Should be adjacent**');
-    for (const adjacency of stated) {
-      const from = programmeSpace(programme, adjacency.fromSpaceId)?.name ?? adjacency.fromSpaceId;
-      const to = programmeSpace(programme, adjacency.toSpaceId)?.name ?? adjacency.toSpaceId;
-      lines.push(`- ${from} ↔ ${to} — ${adjacency.reason}`);
-    }
-    lines.push('');
+  if (asked.length > 0) {
+    lines.push('**You asked for**', ...asked.map(describe), '');
+  }
+
+  const assumed = programme.adjacencies.filter(
+    (adjacency) =>
+      adjacency.source === BRIEF_REQUIREMENT_SOURCES.Assumed &&
+      adjacency.strength !== ADJACENCY_STRENGTHS.Avoid
+  );
+  if (assumed.length > 0) {
+    lines.push('**Should be adjacent**', ...assumed.map(describe), '');
   }
 
   return lines.join('\n').trimEnd();

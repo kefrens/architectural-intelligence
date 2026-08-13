@@ -36,17 +36,23 @@ import type { BuildingKnowledge } from '../understanding/building-knowledge.js';
 /**
  * The stages a provider may enrich.
  *
- * Only the artefact stages appear. The Geometry *Plan* — walls with thickness and
- * the Requests that build them — is still produced by operation providers
- * through the existing `actions` seam; `geometry` here is the Geometry *Graph*,
- * which is an artefact like the three above it.
+ * Only the artefact stages appear — one entry per reviewable artefact, and the
+ * design pipeline ends at the last of them. Requests that build things are still
+ * produced by operation providers through the existing `actions` seam, in the
+ * Direct Execution lane; nothing in this list emits one.
  */
 export const PLANNING_STAGES = {
   Brief: 'brief',
   Programme: 'programme',
   Layout: 'layout',
   /** Sprint 28.1a. Enrichment runs *before* the invariant gate, so a provider that breaks a clause is caught by the same check as a broken packer. */
-  Geometry: 'geometry'
+  Geometry: 'geometry',
+  /**
+   * Sprint 1.1 — the fifth and final artefact (ADR-AI-0001). Same rule as the
+   * stage above: enrich, then gate, so a provider that breaks an invariant is
+   * caught by the check that catches broken synthesis.
+   */
+  Specification: 'specification'
 } as const;
 
 export type PlanningStage = (typeof PLANNING_STAGES)[keyof typeof PLANNING_STAGES];

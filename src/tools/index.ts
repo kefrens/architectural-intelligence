@@ -1,7 +1,7 @@
 /**
  * The planning tools (Sprints 27.8–28.1a, moved here by Sprint 29.1).
  *
- * These five definitions describe, to a language model, how to reach the four
+ * These definitions describe, to a language model, how to reach the five
  * planning stages and the Building operations. They lived in `apps/web/src/ai/`
  * from the sprints that wrote them until ADR-0029 Rule 2, which is the point at
  * which "the tools that call this service" stopped being a host concern and
@@ -13,7 +13,8 @@
  */
 
 export { createArchitecturalToolDefinitions } from './architectural-tools.js';
-export { captureBriefToolDefinition } from './brief-tools.js';
+export { createCaptureBriefToolDefinition } from './brief-tools.js';
 export { createGeometryToolDefinition } from './geometry-tools.js';
 export { createLayoutToolDefinition } from './layout-tools.js';
 export { createProgrammeToolDefinition } from './programme-tools.js';
+export { createSpecificationToolDefinition } from './specification-tools.js';

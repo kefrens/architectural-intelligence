@@ -1,0 +1,647 @@
+# Architectural Intelligence — Current State (structured)
+#
+# Companion to 00-current-state.md. Source code wins over every other source.
+# Only implemented capabilities appear here; anything planned belongs in
+# `notImplemented`, and anything unverified in `needsVerification`.
+#
+# This repository was extracted from ArchiSimple by Sprint 30.3 (ADR-0030). It
+# is the first current-state pair it has had of its own — until now the fact was
+# recorded in the other repository, describing a package that no longer lives
+# there.
+
+meta:
+  generated: '2026-08-10'
+  commit: 44e0f43 # + Sprints 1.2 and 1.3, uncommitted at generation
+  package: '@archisimple/architectural-intelligence'
+  version: '0.2.0'
+  repository: 'https://github.com/kefrens/architectural-intelligence'
+  licence: MIT
+  latestImplementedSprint: 1.5 # this repository's own numbering since the extraction
+  extractedFrom: { repository: archisimple, sprint: 30.3, adr: ADR-0030 }
+  packageManager: npm
+  standalone: true
+  # ADR-0030 Rule 4, asserted in CI: no workspace:, file:, link:, git or
+  # relative dependency. The platform arrives by version, from the registry.
+  localDependencies: 0
+  moduleResolution: NodeNext
+  moduleResolutionSetIn: tsconfig.json
+  relativeImportsCarryJs: true
+  entryPoints: { '.': dist/index.js }
+  typesEntry: dist/index.d.ts
+  publishedFiles: [dist]
+  node: '>=20'
+  productionSourceLines: 11770
+  latestSprint: 1.5 # this repository's own numbering; see docs/sprints/
+  productionSourceDirectories: 11
+  verification:
+    # Executed for this snapshot, not inferred.
+    build: { command: 'tsc -b', status: pass }
+    lint: { command: 'eslint .', status: pass }
+    test: { command: 'vitest run', status: pass, files: 15, tests: 642 }
+
+# The platform this layer reads. Declared as peerDependencies so the host and
+# this package share one automation-api and one ai-engine — two copies of the
+# Automation boundary is a Proposal one half does not recognise (ADR-0030).
+platform:
+  dependencyKind: peerDependencies
+  # Raised from ^0.1.0 when ArchiSimple Sprint 31.0 published the wall
+  # realisation skills. ADR-0030 Rule 8: the platform releases first.
+  range: '^0.2.0'
+  resolvedVersion: '0.2.0'
+  packages:
+    - '@archisimple/ai-engine'
+    - '@archisimple/automation-api'
+    - '@archisimple/building-model'
+    - '@archisimple/inspector'
+    - '@archisimple/shared'
+    - '@archisimple/skills'
+    - '@archisimple/spatial'
+  forbidden:
+    - { package: '@archisimple/core', why: 'Runtime state; ADR-0023 Rule 1' }
+    - { package: '@archisimple/automation-mcp', why: 'a second execution pipeline' }
+  enforcedBy: src/__tests__/architecture-compliance.test.ts
+
+# What this package is, stated as invariants rather than description.
+invariants:
+  ownsProjectState: false
+  holdsDocumentReference: false
+  holdsCommandDispatcher: false
+  executesAnything: false
+  importsReactOrThree: false
+  # It emits CommandRequests in the Direct Execution lane and hands them to a
+  # host that dispatches them after approval. That is not execution.
+  emitsCommandRequests: { inLane: direct-execution, executedBy: host }
+
+service:
+  name: ArchitecturalIntelligenceService
+  file: src/architectural-intelligence-service.ts
+  sprint: 24.5
+  entryPoints:
+    - { name: interpret, classifies: true, note: 'one utterance, one turn, any lane' }
+    - {
+        name: workflowState,
+        classifies: false,
+        note: 'Sprint 1.2 — a derived, read-only projection; generates nothing and stores nothing'
+      }
+    - {
+        name: interpretIntent,
+        classifies: false,
+        note: 'reached through a host Tool Broker; a tool call is Direct Execution by construction'
+      }
+  returns: ArchitecturalResponse
+  responseFields:
+    [
+      intent,
+      message,
+      answer,
+      proposal,
+      blocker,
+      classification,
+      brief,
+      clarification,
+      programme,
+      layout,
+      geometry,
+      specification
+    ]
+  options:
+    knowledge: { type: BuildingKnowledge, required: true }
+    planner: { type: ArchitecturalPlanner, default: 'built-in operation providers' }
+    briefDrafts:
+      { type: BriefDraftStore, optional: true, absentMeans: 'no multi-turn clarification' }
+    artefacts:
+      {
+        type: PlanningArtefactReader,
+        optional: true,
+        absentMeans: 'programme, layout, geometry and specification lanes unreachable; workflowState() reports five untouched stages'
+      }
+
+# The front door. Deterministic, host-side, before any provider is consulted.
+lanes:
+  implemented: 8
+  file: src/brief/request-classification.ts
+  values:
+    - { id: direct-execution, produces: 'ArchitecturalPlan → Proposal', gate: none }
+    - { id: brief-generation, produces: ArchitecturalBrief, gate: none }
+    - { id: clarification-required, produces: ClarificationQuestion, gate: none }
+    - { id: programme-generation, produces: SpaceProgramme, gate: hasApprovedBrief }
+    - { id: layout-generation, produces: LayoutPlan, gate: hasApprovedProgramme }
+    - { id: geometry-generation, produces: GeometryGraph, gate: hasApprovedLayout }
+    # Sprint 1.2. The last lane: every artefact is now reachable by conversation
+    # as well as by tool call.
+    - { id: specification-generation, produces: GeometrySpecification, gate: hasApprovedGeometry }
+    # Sprint 1.3. The only lane that reaches back *up* the pipeline: it produces
+    # revision n+1 of the approved Brief, and everything below goes stale.
+    - {
+        id: brief-revision,
+        produces: 'ArchitecturalBrief (revision n+1)',
+        gate: hasBriefToRevise,
+        requires: 'a revision cue AND a brief topic the reader recognises'
+      }
+  mandatoryBriefTopics: [storeys, bedrooms, bathrooms]
+  # Sprint 1.5: every planning tool is now a factory bound to the service. The
+  # Brief's was the last standalone one, which is why it could not read
+  # `approvedBrief()` and forked the lineage on every call (Bug 002).
+  allToolsServiceBound: true
+  # Sprint 1.2, ADR-AI-0002 Rules 7 and 8. Each stage gate means approved *and
+  # current*, and all four are read off the workflow-state projection rather than
+  # derived a second time inside interpret.
+  gatesDerivedFrom: workflowState()
+  gateMeaning: 'the upstream artefact is approved and is not stale'
+  # Sprint 1.3. A different question from the four stage gates: whether there is
+  # a Brief to change, not whether the stage below it can be built.
+  hasBriefToRevise: 'the brief stage holds an approved artefact'
+
+# The design pipeline, complete since Sprint 1.1: five artefacts, five approvals.
+# The port the host supplies, and the one place it widened.
+artefactPort:
+  interface: PlanningArtefactReader
+  file: src/artefacts/planning-artefact-reader.ts
+  methods:
+    - { name: 'current(kind)', sprint: 27.9, optional: false }
+    # ADR-AI-0002 Rule 10: argument-free and optional, so apps/web's existing
+    # PlanningArtefactRegistry satisfies it structurally. `history(kind)` would
+    # have forced a coordinated two-repository release for a read-only method.
+    - { name: 'all()', sprint: 1.3, optional: true, hostChangeRequired: false }
+  absentAllMeans: 'revisions report the identity in force and no lineage behind it'
+
+artefacts:
+  implemented: 5
+  approvalMechanism: 'ai-engine Proposal + AiSessionController.approveProposal'
+  persistedBy: 'the host, in the project file (version 3), opaquely by kind'
+  immutable: true
+  revisedBy: 'revise<Artefact>, same identity, incremented revision'
+  # Sprint 1.3. Regenerating a stage the project holds is always revision n+1 of
+  # it, never a second artefact — the provenance field records which upstream
+  # revision the regeneration read.
+  regenerationIsRevision: true
+  lineagesPerStage: 1
+  # Sprint 1.5 (Bug 002). Sprint 1.3 gave four stages "produce = revise" and left
+  # the Brief three paths that *created* one, all of which forked. A second
+  # lineage made every stage ineligible, so an ordinary conversation could kill a
+  # project in two turns. All three now fold through one function.
+  briefProducingPaths:
+    - { path: planning_captureBrief, folds: true, since: 1.5 }
+    - { path: 'interpret → brief-generation', folds: true, since: 1.5 }
+    - { path: 'interpret → clarification completes', folds: true, since: 1.5 }
+    - { path: 'interpret → brief-revision', folds: true, since: 1.3 }
+  briefFoldingFunction: reviseBriefFromFields
+  unchangedInputAnswers: nothing-to-do
+  revisePatchIncludesProvenance: true # widened by Sprint 1.3, all four artefacts
+  productionRevisionCallers:
+    - {
+        function: reviseBrief,
+        calledBy: 'reviseBriefFromFields — the one folding rule, behind every path that produces a Brief (Sprint 1.5)'
+      }
+    - { function: reviseProgramme, calledBy: ArchitecturalIntelligenceService.generateProgramme }
+    - { function: reviseLayoutPlan, calledBy: ArchitecturalIntelligenceService.generateLayout }
+    - { function: reviseGeometryGraph, calledBy: ArchitecturalIntelligenceService.generateGeometry }
+    - {
+        function: reviseGeometrySpecification,
+        calledBy: ArchitecturalIntelligenceService.generateSpecification
+      }
+  stages:
+    - kind: architectural-brief
+      type: ArchitecturalBrief
+      sprint: 27.8
+      file: src/brief/architectural-brief.ts
+      owns: [user requirements, desired spaces, stated relationships, assumptions]
+      neverOwns: [areas, coordinates, geometry, distances]
+      topics:
+        [storeys, bedrooms, bathrooms, garage, office, accessibility, style, budget, totalArea]
+      topicMinimums:
+        sprint: bug-006
+        storeys: 1
+        note: 'a count below its minimum leaves the topic absent, so the host asks rather than recording "0 storeys"'
+      relationships:
+        sprint: bug-004
+        type: SpaceRelationship
+        kinds: [adjacent, separated]
+        note: 'topological only; names spaces rather than identifying them (ADR-AI-0003 Rules 1, 2)'
+      assembledBy: src/brief/brief-assembly.ts
+      provenance: none
+    - kind: space-programme
+      type: SpaceProgramme
+      sprint: 27.9
+      file: src/programme/space-programme.ts
+      owns:
+        [room programme, target areas, intended adjacency, adjacency provenance, functional zoning]
+      neverOwns: [coordinates, walls]
+      enums:
+        priorities: [required, expected, optional]
+        areaSources: [scaled-to-stated-total, typical]
+        zones: [day, night, service, circulation]
+        adjacencyStrengths: [required, preferred, avoid]
+        adjacencySources: [stated, answered, assumed]
+      synthesizedBy: src/programme/programme-synthesis.ts
+      regeneration:
+        sprint: bug-005
+        rule: 'a regeneration whose patch equals the artefact in force answers NothingToDo rather than superseding it'
+        identity: 'withPreviousSpaceIds re-uses approved space ids by name, so downstream artefacts keep pointing at spaces that exist'
+        appliesTo: [space-programme, layout-plan, geometry-graph, geometry-specification]
+      provenance: { field: sourceBrief, type: BriefProvenance, staleCheck: matchesBrief }
+    - kind: layout-plan
+      type: LayoutPlan
+      sprint: 28.0
+      file: src/layout/layout-plan.ts
+      owns: [resolved adjacency, circulation, storey assignment, orientation intent]
+      neverOwns: [coordinates, polygons]
+      graph:
+        nodeKinds: [space, circulation]
+        edgeKinds: [adjacent, connected, separated, vertical-connection]
+      synthesizedBy: src/layout/layout-synthesis.ts
+      provenance:
+        { field: sourceProgramme, type: ProgrammeProvenance, staleCheck: matchesProgramme }
+      derivedNotStored: { what: LayoutQuality, computedBy: computeLayoutQuality }
+    - kind: geometry-graph
+      type: GeometryGraph
+      sprint: 28.1a
+      file: src/geometry/geometry-graph.ts
+      owns:
+        [room polygons, wall candidates, opening candidates, storey elevations, geometry adjacency]
+      neverOwns: [wall thickness, wall height, Runtime entities, CommandRequests]
+      polygonConvention: finished-face
+      shapeLimitation: axis-aligned rectangles
+      synthesizedBy: src/geometry/geometry-synthesis.ts
+      provenance: { field: sourceLayout, type: LayoutProvenance, staleCheck: matchesLayout }
+      derivedNotStored: { what: PackingEvaluation, computedBy: evaluateGeometryGraph }
+      invariantGate:
+        function: gateGeometryGraph
+        runsBefore: proposal
+        appliesTo: 'any strategy, including a plugin’s'
+        onViolation: 'hard failure naming the clause; no proposal'
+    # Sprint 1.1, ADR-AI-0001. The final design artefact, and the only one that
+    # crosses to a consuming CAD application.
+    - kind: geometry-specification
+      type: GeometrySpecification
+      sprint: 1.1
+      adr: ADR-AI-0001
+      file: src/geometry/geometry-specification.ts
+      owns:
+        [
+          wall thickness,
+          wall role,
+          wall centrelines,
+          wall height,
+          colinear runs,
+          opening kind and dimensions,
+          space boundaries after thickness insertion,
+          metric conventions
+        ]
+      neverOwns: [topology nodes, wall joins, host entity ids, CommandRequests, transactions]
+      contractVersion: '1.0.0' # semantic, independent of the npm version (Rule 8)
+      contractCheck: isContractCompatible # major only
+      conventions: { unit: metre, precision: 0.001, winding: counter-clockwise }
+      synthesizedBy: src/geometry/specification-synthesis.ts
+      realisationSkill: geometry.insertWallThickness # per storey; rails are lines in one plan
+      defaults: src/geometry/construction-defaults.ts
+      provenance:
+        { field: sourceGeometry, type: GeometryProvenance, staleCheck: matchesGeometryGraph }
+      derivedNotStored: { what: violations, computedBy: validateGeometrySpecification }
+      invariantGate:
+        function: gateGeometrySpecification
+        runsBefore: proposal
+        clauses: [S1, S2, S3, S4, S5, S6, S7]
+        onViolation: 'hard failure naming the clause; no proposal'
+      # A room spanning an inserted wall grows; nothing ever shrinks. Reported in
+      # warnings, because the user approved the areas one artefact ago.
+      areaRule: 'no space is under-delivered (S1)'
+      # Exported because ADR-0031 Rule 4 makes a consumer's rejection a defect
+      # here rather than a question for the user.
+      validationExported: validateGeometrySpecification
+      productionRevision: 'regenerating over an approved specification for the same graph yields revision n+1'
+
+# The workflow-state projection (Sprint 1.2 — ADR-AI-0002).
+#
+# Derived on every call from the artefact reader and the draft store. Not an
+# artefact: no kind, never approved, never persisted, never cached. It is what
+# lets a host render the pipeline without re-deriving a single rule of it.
+workflow:
+  sprint: 1.2
+  adr: ADR-AI-0002
+  directory: src/workflow/
+  entryPoint: ArchitecturalIntelligenceService.workflowState
+  pureFunction: deriveWorkflowState
+  stageTable: src/workflow/pipeline.ts
+  stages: 5 # reuses PLANNING_STAGES; no second stage vocabulary
+  derived: true
+  persisted: false
+  cached: false
+  stageFields:
+    artefact: [none, draft, approved] # `draft` is reachable for the brief only
+    approved: 'ArtefactIdentity | absent'
+    # Sprint 1.3. Every revision the project holds, oldest first. Falls back to
+    # the identity in force when the host's reader supplies no all().
+    revisions: 'ArtefactIdentity[]'
+    stale: 'StaleDerivation | absent'
+    blockers: 'PlanBlocker[] — empty exactly when eligible'
+    eligible: 'the upstream artefact is approved and not stale'
+    actions: [generate, regenerate]
+  topFields: [stages, currentStage, complete]
+  staleness:
+    transitive: true # Rule 6: own provenance diverged, or the stage above is stale
+    inheritedFlag: 'StaleDerivation.inherited distinguishes the two'
+    predicates: [matchesBrief, matchesProgramme, matchesLayout, matchesGeometryGraph]
+    # Sprint 1.2 gave three of the four their first production caller; before it,
+    # staleness was detectable and never detected.
+    firstProductionCaller: 1.2
+  # Sprint 1.3, Story 1.3.4. More than one artefact id in a stage's revisions is
+  # a split lineage — a defect, not a workflow, and unrepairable through the
+  # projection. Reported as an `ambiguous` blocker on that stage and the one
+  # below it. There are no projects created before Sprint 1.3, so it can only
+  # mean the revision paths regressed.
+  lineageIntegrity:
+    detectedFrom: "more than one distinct id among a stage's revisions"
+    reportedAs: ambiguous
+    cascadesDownstream: true
+  blockerVocabulary:
+    shared: PLAN_BLOCKER_REASONS # ADR-0027.1 Rule 8: one list, extended
+    addedBySprint12: superseded
+    separateVocabulary: false
+  hostOwns:
+    # ADR-AI-0002 Rule 2. This layer never learns that a proposal was approved,
+    # only that an artefact became readable.
+    - proposals
+    - approval state
+    - the pending proposal
+    - session state
+    - artefact persistence
+    - UI, navigation, user interaction
+  crossesAs: 'plain JSON; the host restates the shape structurally (ADR-0030 Rule 2, ADR-0031 Rule 1)'
+  labelsEmitted: 0 # every identifier is a stable string the host maps itself
+  # Sprint 1.4. Two consumers, one derivation (ADR-AI-0002 Rule 8).
+  consumers:
+    - { name: 'classifyRequest stage gates', since: 1.2 }
+    - { name: 'the architectural context fragment', since: 1.4 }
+
+# Every number this layer needs comes from the Skills Platform (ADR-0027,
+# ADR-0027.1 Rule 9). No stage re-implements geometry, unit or spatial maths.
+skillsUsage:
+  package: '@archisimple/skills'
+  functions:
+    - { skill: allocateSpaceAreas, usedBy: src/programme/programme-synthesis.ts }
+    - { skill: assignStoreys, usedBy: src/layout/layout-synthesis.ts }
+    - { skill: resolveAdjacencies, usedBy: src/layout/layout-synthesis.ts }
+    - { skill: scoreCirculation, usedBy: src/layout/layout-quality.ts }
+    - { skill: compareLayoutSpaces, usedBy: src/layout/layout-synthesis.ts }
+    - { skill: packLayout, usedBy: src/geometry/geometry-synthesis.ts }
+    - { skill: evaluatePacking, usedBy: src/geometry/geometry-evaluation.ts }
+    - { skill: sharedPolygonEdges, usedBy: src/geometry/geometry-synthesis.ts }
+    # Sprint 1.1, from platform 0.2.0 (ArchiSimple Sprint 31.0).
+    - { skill: insertWallThickness, usedBy: src/geometry/specification-synthesis.ts }
+    - { skill: mergeColinearRuns, usedBy: src/geometry/specification-synthesis.ts }
+    - { skill: findJunctions, usedBy: src/geometry/specification-synthesis.ts }
+    - {
+        skill: 'boundsOf / boundsArea / isRectilinear',
+        usedBy: src/geometry/specification-validation.ts
+      }
+    - { skill: createSkillContext, usedBy: 'programme, layout, geometry' }
+
+# What this layer tells a model about the project (Sprint 24.5, extended 1.4).
+contextFragment:
+  id: architecture
+  file: src/context/architectural-context-provider.ts
+  fields: [editOperations, answerableQuestions, activeFloorId, floorCount, design]
+  design:
+    sprint: 1.4
+    derivedFrom: workflowState()
+    fields: [currentStage, complete, stages, nextTool]
+    stageFields: [stage, artefact, revision, stale, eligible, blockedBecause]
+    nullsRatherThanAbsentKeys: true # it crosses to a model as prompt text
+    nextTool:
+      table: src/tools/planning-tool-names.ts
+      keyedBy: PLANNING_STAGES # total; a sixth stage without a tool fails to compile
+      promisesAvailability: false # the host's broker still checks `requires`
+    carriesProposalState: false # ADR-AI-0002 Rule 2
+    readsModelOutput: false # ADR-0027.1 Rule 6
+    cached: false
+
+# The Direct Execution lane. Shipped since Sprint 24.5 and untouched by the
+# planning pipeline above it.
+directExecution:
+  planner: { name: ArchitecturalPlanner, file: src/planning/architectural-planner.ts }
+  artefact:
+    { name: ArchitecturalPlan, carries: [PlanStep, CommandRequest, previewGeometry, risk, affects] }
+  proposalBuilder: { file: src/proposal/proposal-builder.ts, bulkThreshold: BULK_STEP_THRESHOLD }
+  blockerReasons: [missing-information, ambiguous, unsupported, nothing-to-do]
+  intentKinds: [question, modification, ambiguous, unknown]
+  actions:
+    questions:
+      [
+        roomCount,
+        loadBearingWalls,
+        floorArea,
+        roomAdjacency,
+        projectOverview,
+        describeSelection,
+        openingOrientation,
+        naturalLight
+      ]
+    modifications: [moveRoom, renameRoom, setWallProperty, alignWalls, deleteSelection]
+    declaredButRefused:
+      - { action: resizeRoom, by: unsupported, why: 'a room is the space its walls enclose' }
+      - { action: addOpening, by: unsupported }
+  operationProviders:
+    implemented: 6
+    registeredLikeAPlugin: true
+    values:
+      - { id: move-room, file: src/planning/operations/move-room-operation.ts }
+      - { id: rename-room, file: src/planning/operations/rename-room-operation.ts }
+      - { id: wall-property, file: src/planning/operations/wall-property-operation.ts }
+      - { id: align-walls, file: src/planning/operations/align-walls-operation.ts }
+      - { id: delete, file: src/planning/operations/delete-operation.ts }
+      - { id: unsupported, file: src/planning/operations/unsupported-operations.ts }
+
+# What the reasoning layer knows about the project: nothing of its own.
+knowledge:
+  facade: { name: BuildingKnowledge, file: src/understanding/building-knowledge.ts }
+  cachesOrIndexes: false
+  readsThrough:
+    - { service: QueryDispatcher, package: '@archisimple/automation-api' }
+    - { service: BuildingService, package: '@archisimple/building-model' }
+    - { service: SpatialService, package: '@archisimple/spatial' }
+    - { service: InspectorService, package: '@archisimple/inspector', optional: true }
+  textSearch: false
+  answering:
+    { file: src/understanding/architectural-question.ts, function: answerArchitecturalQuestion }
+
+extensionPoints:
+  - name: ArchitecturalOperationProvider
+    registry: ArchitecturalPlanner
+    sprint: 24.5
+    claims: 'one or more actions; a duplicate id or a duplicate action claim is an error'
+  - name: PlanningStageProvider
+    registry: ArchitecturalPlanner
+    sprint: 28.3
+    adr: ADR-0028
+    stages: [brief, programme, layout, geometry, specification]
+    exclusive: false
+    order: registration
+    attribution:
+      { field: contributors, type: EnrichedArtefact, file: src/artefacts/enriched-artefact.ts }
+
+# One value a host registers instead of three imports it assembles.
+composition:
+  contribution: { id: ARCHITECTURAL_INTELLIGENCE_CONTRIBUTION_ID, file: src/contribution.ts }
+  sprint: 29.1
+  adr: ADR-0029
+  rule: 2
+  provides: [intelligence, tools, provider, contextProvider, briefDrafts]
+  buildsBuildingKnowledgeItself: true # Sprint 30.1, ADR-0030 Rule 1
+  factories: [createArchitecturalIntelligenceContribution, contributionForIntelligence]
+  hostPortsMirroredStructurally:
+    - PlanningArtefactReader
+    - PlanningStageProvider
+    - PlanningStageCapability
+
+tools:
+  implemented: 9
+  describeOnly: true
+  executes: false
+  order: 'captureBrief, building operations, programme, layout, geometry, specification — handed to a model in this order; new tools append, never insert'
+  values:
+    - planning_captureBrief
+    - building_moveRoom
+    - building_renameRoom
+    - building_setWallProperty
+    - building_alignWalls
+    - planning_generateProgramme
+    - planning_generateLayout
+    - planning_generateGeometry
+    - planning_generateSpecification # Sprint 1.1, appended last on purpose
+
+provider:
+  adapter: { id: ARCHITECTURAL_PROVIDER_ID, file: src/provider/architectural-provider-adapter.ts }
+  contract: AiProviderAdapter
+  deterministic: true
+  offline: true
+  callsLanguageModel: false
+  recognition: pattern matching
+  contextProvider:
+    { id: ARCHITECTURAL_CONTEXT_PROVIDER_ID, file: src/context/architectural-context-provider.ts }
+
+tests:
+  files: 15
+  tests: 642
+  harness: src/__tests__/harness.ts
+  perFile:
+    architecture-compliance: 245
+    workflow-state: 43
+    revision-lineage: 40
+    brief-lifecycle: 32
+    programme: 38
+    architectural-context: 17
+    layout: 38
+    geometry: 35
+    specification: 33
+    brief: 33
+    operations: 24
+    intent-recognizer: 24
+    building-knowledge: 15
+    architectural-intelligence-service: 13
+    pipeline: 8
+  compliance:
+    file: src/__tests__/architecture-compliance.test.ts
+    asserts:
+      - 'no production source imports @archisimple/core'
+      - 'no production source holds or calls a CommandDispatcher'
+      - 'no production source imports @archisimple/automation-mcp'
+      - 'only the seven permitted @archisimple packages are imported'
+      # Sprint 1.1, ADR-AI-0001 Rule 1: the design pipeline terminates in an
+      # artefact. Direct Execution is unaffected and still emits Requests.
+      - 'no file under src/geometry/ names CommandRequest or imports automation-api'
+      - 'the Geometry Graph carries no wall thickness; the Specification does'
+      # Sprint 1.2, ADR-AI-0002 Rule 1: a cached projection returns the right
+      # answer for every test that builds its project up front, and the wrong one
+      # for a user who revised a brief an hour into a session.
+      - 'no production source holds an ArchitecturalWorkflowState in a field'
+      - 'no production source assigns workflowState() or deriveWorkflowState() to a binding'
+      # Sprint 1.4: the fragment is the projection's second consumer and the more
+      # tempting one to cache — it is collected every turn, and a stale one would
+      # be read by a model that cannot tell.
+      - 'no production source caches describeDesign() or holds an ArchitecturalDesignState field'
+  endToEnd:
+    file: src/__tests__/pipeline.test.ts
+    covers: 'utterance → Brief → Programme → Layout → Geometry Graph; the Specification chain is covered end to end in specification.test.ts'
+  fiveStageEndToEnd:
+    file: src/__tests__/workflow-state.test.ts
+    sprint: 1.2
+    covers: 'utterance → Brief → approve → Programme → approve → Layout → approve → Geometry → approve → Specification → approve, asserting the workflow state after every approval'
+    approvalIsTheHosts: 'the test writes the approved artefact into the reader, because there is no approval mechanism in this package to invoke'
+  revisionEndToEnd:
+    file: src/__tests__/revision-lineage.test.ts
+    sprint: 1.3
+    covers: 'revise an approved Brief, watch staleness propagate, regenerate each stage in turn, and assert one lineage per stage throughout'
+    structuralPortTest: 'a host-shaped object with only all() and current() satisfies PlanningArtefactReader'
+    requiresEditor: false
+    requiresNetwork: false
+
+ci:
+  workflows: [.github/workflows/ci.yml, .github/workflows/release.yml]
+  steps: [install, build, lint, test, no-local-dependencies]
+  publishesOnMerge: false
+  releaseTrigger: workflow_dispatch
+
+docs:
+  adr: [ADR-AI-0001, ADR-AI-0002] # ADR-AI-0002 at revision 1.2
+  sprints: [1.1, 1.2, 1.3, 1.4, 1.5]
+  inheritedFrom:
+    repository: archisimple
+    documents:
+      - ADR-0022 — Automation API
+      - ADR-0023 — AI Workspace & Context Architecture
+      - ADR-0027 — AI Skills Platform
+      - ADR-0027.1 — Architectural Intelligence Planning Pipeline (Rules 1–13)
+      - ADR-0028 — AI Extension Points
+      - ADR-0029 — Modular Platform Boundary
+      - ADR-0030 — Repository Separation
+      - ADR-0031 — Geometry Execution Pipeline
+
+notImplemented:
+  - id: artefact-navigation
+    name: Which revision the user is looking at
+    evidence: 'the projection lists every revision of every stage; which one is on screen is session state and belongs to the host (ADR-AI-0002, Out of Scope)'
+    byDesign: true
+  - id: revision-diffing
+    name: Comparing two revisions of an artefact
+    evidence: 'both revisions are readable through the reader and nothing computes a difference between them'
+  - id: pending-proposal-in-workflow-state
+    name: Reporting which proposal is awaiting approval
+    evidence: 'ProposalApprovalState and pendingProposal() are session-scoped in @archisimple/ai-engine; this layer observes approval only as an artefact becoming readable (ADR-AI-0002 Rule 2)'
+    byDesign: true
+  - id: dwelling-evidence-without-a-dwelling-word
+    name: Reading "build me … with 2 bedrooms and 1 bathroom" as a design request when no dwelling word matches
+    evidence: "DWELLING_WORDS is an exact-match list; Sprint 1.5 added spellings (appartment, appartement) and types (duplex, townhouse, penthouse) but did not widen what counts as evidence — that trade is the classifier's deliberate asymmetry and wants its own decision"
+  - id: split-lineage-repair
+    name: Repairing a project that already holds two Brief lineages
+    evidence: 'Sprint 1.5 makes the split unreachable; a project created before it holds two designs and no basis for preferring either, and choosing needs a surface that can show both'
+  - id: windows
+    name: Openings in external walls
+    evidence: 'the Geometry Graph produces opening candidates only between two rooms, so there is no candidate in an external wall for a window to be placed in; recorded in the specification’s own assumptions'
+  - id: load-bearing
+    name: Load-bearing determination
+    evidence: 'wall role is external or internal only; deciding which walls carry load needs a structural model this repository does not have'
+  - id: constraint-optimisation
+    name: Constraint optimisation of an approved Geometry Graph
+    evidence: 'Sprint 1.3 gave reviseGeometryGraph a production caller (regeneration), but nothing revises a Graph to satisfy a constraint; ADR-0027.1 Rule 13 describes the stage, Sprint 28.2 was never written'
+  - id: non-rectangular-packing
+    name: Non-rectilinear room polygons
+    evidence: 'the built-in packer produces axis-aligned rectangles only; evaluatePacking refuses a shape it cannot judge rather than judging it wrongly (Sprint 28.1a, stated limitation)'
+  - id: resize-and-opening-operations
+    name: Room resize and opening insertion as planned operations
+    evidence: 'both actions are recognised and routed to createUnsupportedOperationProvider, which returns an unsupported blocker with alternatives'
+  - id: language-model-reasoning
+    name: A reasoning path that calls a language model
+    evidence: 'the provider adapter is deterministic pattern matching; the model reaches this layer only through host-resolved tool calls (ADR-0027.1 Rule 6)'
+  - id: pre-extraction-sprint-documents
+    name: Sprint documents for the work that predates the extraction
+    evidence: 'docs/sprints holds Sprint 1.1 and nothing earlier; every sprint cited in source comments (24.5–30.3) is documented in the archisimple repository'
+  - id: architecture-findings
+    name: A numbered findings register of its own
+    evidence: 'code comments cite I3, I7 and I-nn from the archisimple findings register; this repository has none'
+
+needsVerification:
+  - whether every I-nn cited in source comments still corresponds to an open finding in the archisimple register
+  - whether apps/web is currently composing this package at 0.1.1 or an earlier published version
+  - the exact set of ArchiSimple sprint documents that should be mirrored or referenced here
+  - whether `@archisimple/inspector` being optional is exercised by any consumer

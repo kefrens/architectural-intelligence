@@ -110,6 +110,65 @@ export interface DesiredSpace {
   readonly count: number;
 }
 
+/**
+ * How two spaces should stand to each other (Bug 004, ADR-AI-0003 Rule 1).
+ *
+ * Exactly two kinds, and both are topological. "Separated" means *not adjacent*;
+ * it does not mean "at least 3 m apart". A distance here would be geometry in the
+ * artefact ADR-0027.1 Rule 3 keeps furthest from it, two stages above where
+ * coordinates begin — and the first question anyone asks about a metric
+ * relationship is how the number was chosen.
+ *
+ * There is deliberately no third kind for "near". It is
+ * `ADJACENCY_STRENGTHS.Preferred` wearing a disguise, and a preference is
+ * something the platform holds, not something a user states (Rule 3).
+ */
+export const SPACE_RELATIONSHIP_KINDS = {
+  /** These two should be reachable from each other directly. */
+  Adjacent: 'adjacent',
+  /** These two should not open onto each other. */
+  Separated: 'separated'
+} as const;
+
+export type SpaceRelationshipKind =
+  (typeof SPACE_RELATIONSHIP_KINDS)[keyof typeof SPACE_RELATIONSHIP_KINDS];
+
+/**
+ * One stated relationship between two spaces the Brief names.
+ *
+ * Carries **names**, not ids (Rule 2). `DesiredSpace` has no id and gains none:
+ * an identity graph inside the Brief would be a second thing to keep consistent
+ * across revisions, for no consumer that needs it. The Space Programme resolves
+ * these names to its own space ids when it builds `IntendedAdjacency`, by the
+ * same role matching that decides which spaces exist at all.
+ */
+export interface SpaceRelationship {
+  readonly from: string;
+  readonly to: string;
+  readonly kind: SpaceRelationshipKind;
+  /** Where this came from, in the same vocabulary a requirement uses. */
+  readonly source: BriefRequirementSource;
+}
+
+/**
+ * Adds or replaces a relationship, keyed on the unordered pair.
+ *
+ * "Kitchen away from the lounge" and a later "actually, kitchen open to the
+ * lounge" are one relationship changing its mind, not two contradicting each
+ * other — the same reason {@link withRequirement} replaces by topic.
+ */
+export function withRelationship(
+  relationships: readonly SpaceRelationship[],
+  relationship: SpaceRelationship
+): readonly SpaceRelationship[] {
+  const samePair = (candidate: SpaceRelationship): boolean => {
+    const a = [candidate.from.toLowerCase(), candidate.to.toLowerCase()].sort();
+    const b = [relationship.from.toLowerCase(), relationship.to.toLowerCase()].sort();
+    return a[0] === b[0] && a[1] === b[1];
+  };
+  return [...relationships.filter((candidate) => !samePair(candidate)), relationship];
+}
+
 export interface ArchitecturalBrief extends EnrichedArtefact {
   readonly kind: typeof ARCHITECTURAL_BRIEF_KIND;
   /** Stable across revisions. */
@@ -123,6 +182,14 @@ export interface ArchitecturalBrief extends EnrichedArtefact {
   readonly objectives: readonly string[];
   readonly desiredSpaces: readonly DesiredSpace[];
   readonly requirements: readonly BriefRequirement[];
+  /**
+   * Relationships the user stated between spaces (Bug 004, ADR-AI-0003 Rule 8).
+   *
+   * Optional in practice rather than in the type: it defaults to empty, so a
+   * Brief approved before this existed deserialises to the current shape and
+   * nothing downstream branches on whether it is there.
+   */
+  readonly relationships: readonly SpaceRelationship[];
   /** What was decided for the user rather than by them. */
   readonly assumptions: readonly string[];
   /** Mandatory topics still unanswered. Empty means the Brief is complete. */
@@ -134,6 +201,7 @@ export function createBrief(input: {
   readonly objectives?: readonly string[];
   readonly desiredSpaces?: readonly DesiredSpace[];
   readonly requirements?: readonly BriefRequirement[];
+  readonly relationships?: readonly SpaceRelationship[];
   readonly assumptions?: readonly string[];
   readonly openQuestions?: readonly string[];
   readonly now?: number;
@@ -147,6 +215,7 @@ export function createBrief(input: {
     objectives: input.objectives ?? [],
     desiredSpaces: input.desiredSpaces ?? [],
     requirements: input.requirements ?? [],
+    relationships: input.relationships ?? [],
     assumptions: input.assumptions ?? [],
     openQuestions: input.openQuestions ?? []
   };
@@ -158,13 +227,25 @@ export function createBrief(input: {
  * Same identity, incremented revision, patched contents. Nothing here mutates
  * the input, so a superseded revision held by an approved proposal stays exactly
  * as the user approved it.
+ *
+ * `utterance` joined the patch in Sprint 1.3, when revising an approved Brief
+ * became a production path. A revision built from a second sentence was built
+ * from that sentence, and the field's whole job is to let the artefact quote
+ * what it came from. The previous revision keeps the previous words, which is
+ * what the lineage is for.
  */
 export function reviseBrief(
   brief: ArchitecturalBrief,
   patch: Partial<
     Pick<
       ArchitecturalBrief,
-      'objectives' | 'desiredSpaces' | 'requirements' | 'assumptions' | 'openQuestions'
+      | 'utterance'
+      | 'objectives'
+      | 'desiredSpaces'
+      | 'requirements'
+      | 'relationships'
+      | 'assumptions'
+      | 'openQuestions'
     >
   >
 ): ArchitecturalBrief {
@@ -227,6 +308,17 @@ export function summarizeBrief(brief: ArchitecturalBrief): string {
     lines.push(
       '**Requirements**',
       ...brief.requirements.map((requirement) => `- ${requirement.statement}`),
+      ''
+    );
+  }
+
+  if (brief.relationships.length > 0) {
+    lines.push(
+      '**Between spaces**',
+      ...brief.relationships.map(
+        (relationship) =>
+          `- ${relationship.from} and ${relationship.to} — ${relationship.kind === SPACE_RELATIONSHIP_KINDS.Separated ? 'kept separate' : 'next to each other'}`
+      ),
       ''
     );
   }

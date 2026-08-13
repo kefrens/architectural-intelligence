@@ -6,13 +6,17 @@ export {
   createBrief,
   isBriefComplete,
   reviseBrief,
+  SPACE_RELATIONSHIP_KINDS,
   summarizeBrief,
+  withRelationship,
   withRequirement,
   type ArchitecturalBrief,
   type BriefRequirement,
   type BriefRequirementSource,
   type BriefTopic,
-  type DesiredSpace
+  type DesiredSpace,
+  type SpaceRelationship,
+  type SpaceRelationshipKind
 } from './architectural-brief.js';
 
 export {
@@ -20,7 +24,8 @@ export {
   DWELLING_WORDS,
   readBareBoolean,
   readBareCount,
-  readBriefTopics
+  readBriefTopics,
+  readSpaceRelationships
 } from './brief-topics.js';
 
 export {
@@ -45,6 +50,8 @@ export {
   answerClarification,
   assembleBrief,
   assembleBriefFromFields,
+  reviseBriefFrom,
+  reviseBriefFromFields,
   startBriefDraft,
   type AssembleBriefOptions
 } from './brief-assembly.js';

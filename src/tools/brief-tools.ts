@@ -32,19 +32,65 @@
 
 import {
   assembleBriefFromFields,
+  BRIEF_REQUIREMENT_SOURCES,
   BRIEF_TOPICS,
   clarificationFor,
   describeClarification,
+  reviseBriefFromFields,
+  SPACE_RELATIONSHIP_KINDS,
   toBriefProposal,
-  type DesiredSpace
+  type ArchitecturalBrief,
+  type DesiredSpace,
+  type SpaceRelationship
 } from '../brief/index.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
+import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
+import { PLANNING_STAGES } from '../planning/planning-stage.js';
+import { PLANNING_TOOL_NAMES } from './planning-tool-names.js';
 
-/** The numeric topics the schema exposes as first-class arguments. */
-const COUNT_ARGUMENTS: readonly (readonly [string, string, string])[] = [
-  [BRIEF_TOPICS.Storeys, 'storeys', 'How many storeys the building should have.'],
-  [BRIEF_TOPICS.Bedrooms, 'bedrooms', 'How many bedrooms are required.'],
-  [BRIEF_TOPICS.Bathrooms, 'bathrooms', 'How many bathrooms are required.']
+/**
+ * The numeric topics the schema exposes as first-class arguments.
+ *
+ * `minimum` is the smallest value that means anything, and it is why this is a
+ * record rather than a tuple (Bug 006). A model answered `storeys: 0`, the topic
+ * counted as answered because it was *present*, and a Brief claiming "0 storeys"
+ * was offered for approval. `synthesizeProgramme` then coerced it back to 1, so
+ * nothing downstream ever noticed — it took a transcript to see it.
+ *
+ * Zero is meaningful for the other two: a studio has no separate bedroom, and
+ * `desiredSpacesFrom` already declines to create a space for a count of zero.
+ * Only a building with no storeys is not a building — which is exactly the rule
+ * `readBriefTopics` has applied to the offline path since Sprint 27.8. This makes
+ * the tool agree with it.
+ *
+ * Below the minimum the topic is left **absent**, not corrected: an unanswered
+ * mandatory topic is a question the host asks, and guessing "they must have meant
+ * 1" would invent a requirement the user never gave.
+ */
+const COUNT_ARGUMENTS: readonly {
+  readonly topic: string;
+  readonly name: string;
+  readonly description: string;
+  readonly minimum: number;
+}[] = [
+  {
+    topic: BRIEF_TOPICS.Storeys,
+    name: 'storeys',
+    description: 'How many storeys the building should have. At least 1.',
+    minimum: 1
+  },
+  {
+    topic: BRIEF_TOPICS.Bedrooms,
+    name: 'bedrooms',
+    description: 'How many bedrooms are required.',
+    minimum: 0
+  },
+  {
+    topic: BRIEF_TOPICS.Bathrooms,
+    name: 'bathrooms',
+    description: 'How many bathrooms are required.',
+    minimum: 0
+  }
 ];
 
 /** The boolean topics. Absent means "not stated", which is not the same as `false`. */
@@ -86,141 +132,292 @@ function asSpaces(value: unknown): readonly DesiredSpace[] {
   return spaces;
 }
 
+/**
+ * Relationships the model read out of the conversation (Bug 004,
+ * ADR-AI-0003 Rules 1 and 7).
+ *
+ * An unrecognised `kind` drops the entry rather than defaulting it. Guessing
+ * between "adjacent" and "separated" would state the opposite of a requirement
+ * half the time, and the deterministic reader still gets its own pass at the
+ * sentence.
+ */
+function asRelationships(value: unknown): readonly SpaceRelationship[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const relationships: SpaceRelationship[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) {
+      continue;
+    }
+    const candidate = entry as { from?: unknown; to?: unknown; kind?: unknown };
+    if (typeof candidate.from !== 'string' || typeof candidate.to !== 'string') {
+      continue;
+    }
+    const kind = Object.values(SPACE_RELATIONSHIP_KINDS).find((known) => known === candidate.kind);
+    const from = candidate.from.trim();
+    const to = candidate.to.trim();
+    if (kind === undefined || from.length === 0 || to.length === 0) {
+      continue;
+    }
+    relationships.push({ from, to, kind, source: BRIEF_REQUIREMENT_SOURCES.Stated });
+  }
+  return relationships;
+}
+
 function asStrings(value: unknown): readonly string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
     : [];
 }
 
-export const captureBriefToolDefinition: ToolDefinition = {
-  // No Automation Request is involved: a Brief executes nothing, so there is
-  // nothing for the MCP server to have to serve before this may be offered.
-  requires: [],
-  schema: {
-    type: 'function',
-    function: {
-      name: 'planning_captureBrief',
-      description:
-        'Records what the user wants from a whole building, before any geometry exists. Call this for high-level design requests ("design a family home", "create a T4 apartment") — never for modelling commands like creating a wall or a room. Supply only what the user actually said: anything you leave out will be asked about rather than assumed.',
-      parameters: {
-        type: 'object',
-        properties: {
-          objectives: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'What the user is trying to achieve, in their own terms.'
-          },
-          spaces: {
-            type: 'array',
-            description: 'Named spaces the user asked for. Never include areas or dimensions.',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string', description: 'e.g. "kitchen", "bedroom".' },
-                count: { type: 'number', description: 'Defaults to 1.' }
-              },
-              required: ['name']
+/**
+ * What a re-capture answers when it would change nothing (Sprint 1.5, Story
+ * 1.5.3). Addressed to the model, because the model is what called this.
+ */
+const BRIEF_ALREADY_SAYS_THAT =
+  'This project already has an approved brief saying exactly that, so there is nothing to record. Move on to the space programme, or tell me what should change.';
+
+/**
+ * Captures an Architectural Brief, or revises the one this project already has
+ * (Sprint 27.8; service-bound by Sprint 1.5).
+ *
+ * ## Why this became a factory
+ *
+ * It was a standalone `const` — the only planning tool that was — so it held no
+ * service, could not read `approvedBrief()`, and could not know a Brief existed.
+ * Every call therefore minted a **new lineage**, and two calls left the project
+ * with two Briefs, no way to say which one counted, and — through Sprint 1.3's
+ * integrity check — no eligible stage at all (Bug 002).
+ *
+ * Binding it to the service is what lets Story 1.3.7's rule finally reach the
+ * fifth stage: *producing an artefact for a project that already has one is a
+ * revision of it*. The four stages below this one have worked that way since
+ * Sprint 1.3; this is the one that could not, and now can.
+ *
+ * The tool's **name, schema and arguments are unchanged**. A model sees exactly
+ * what it saw before; only the host's composition differs.
+ */
+export function createCaptureBriefToolDefinition(
+  intelligence: ArchitecturalIntelligenceService
+): ToolDefinition {
+  return {
+    // No Automation Request is involved: a Brief executes nothing, so there is
+    // nothing for the MCP server to have to serve before this may be offered.
+    requires: [],
+    schema: {
+      type: 'function',
+      function: {
+        name: PLANNING_TOOL_NAMES[PLANNING_STAGES.Brief],
+        description:
+          'Records what the user wants from a whole building, before any geometry exists. Call this for high-level design requests ("design a family home", "create a T4 apartment") — never for modelling commands like creating a wall or a room. Supply only what the user actually said: anything you leave out will be asked about rather than assumed.',
+        parameters: {
+          type: 'object',
+          properties: {
+            objectives: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'What the user is trying to achieve, in their own terms.'
+            },
+            spaces: {
+              type: 'array',
+              description: 'Named spaces the user asked for. Never include areas or dimensions.',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', description: 'e.g. "kitchen", "bedroom".' },
+                  count: { type: 'number', description: 'Defaults to 1.' }
+                },
+                required: ['name']
+              }
+            },
+            ...Object.fromEntries(
+              COUNT_ARGUMENTS.map((argument) => [
+                argument.name,
+                { type: 'number', description: argument.description, minimum: argument.minimum }
+              ])
+            ),
+            ...Object.fromEntries(
+              FLAG_ARGUMENTS.map(([, name, description]) => [
+                name,
+                { type: 'boolean', description }
+              ])
+            ),
+            style: {
+              type: 'string',
+              description: 'An architectural style, only if the user named one.'
+            },
+            budget: { type: 'string', description: 'A stated budget, only if the user gave one.' },
+            totalArea: {
+              type: 'number',
+              description:
+                'A stated total floor area in square metres, only if the user gave one. This is a requirement, not an allocation.'
+            },
+            relationships: {
+              type: 'array',
+              description:
+                'Relationships the user stated between two spaces they named, e.g. "kitchen and dining are separated". Only include what the user actually said. Never include a distance.',
+              items: {
+                type: 'object',
+                properties: {
+                  from: { type: 'string', description: 'A space name, as used in `spaces`.' },
+                  to: { type: 'string', description: 'The other space name.' },
+                  kind: {
+                    type: 'string',
+                    enum: Object.values(SPACE_RELATIONSHIP_KINDS),
+                    description:
+                      '"separated" when they must not open onto each other, "adjacent" when they must.'
+                  }
+                },
+                required: ['from', 'to', 'kind']
+              }
             }
           },
-          ...Object.fromEntries(
-            COUNT_ARGUMENTS.map(([, name, description]) => [name, { type: 'number', description }])
-          ),
-          ...Object.fromEntries(
-            FLAG_ARGUMENTS.map(([, name, description]) => [name, { type: 'boolean', description }])
-          ),
-          style: {
-            type: 'string',
-            description: 'An architectural style, only if the user named one.'
-          },
-          budget: { type: 'string', description: 'A stated budget, only if the user gave one.' },
-          totalArea: {
-            type: 'number',
-            description:
-              'A stated total floor area in square metres, only if the user gave one. This is a requirement, not an allocation.'
-          }
-        },
-        required: []
+          required: []
+        }
       }
-    }
-  },
-  resolve: (args, context): ResolvedToolCall | undefined => {
-    const requirements: { topic: string; value: string | number | boolean; statement: string }[] =
-      [];
+    },
+    resolve: (args, context): ResolvedToolCall | undefined => {
+      const requirements: { topic: string; value: string | number | boolean; statement: string }[] =
+        [];
 
-    for (const [topic, name] of COUNT_ARGUMENTS) {
-      const count = asFiniteNumber(args[name]);
-      if (count === undefined || count < 0) {
-        continue;
+      for (const argument of COUNT_ARGUMENTS) {
+        const count = asFiniteNumber(args[argument.name]);
+        // Below the minimum the topic stays absent, so the host asks (Bug 006).
+        if (count === undefined || count < argument.minimum) {
+          continue;
+        }
+        const noun =
+          argument.topic === BRIEF_TOPICS.Storeys ? 'storey' : argument.topic.replace(/s$/, '');
+        requirements.push({
+          topic: argument.topic,
+          value: count,
+          statement: count === 1 ? `1 ${noun}` : `${count} ${noun}s`
+        });
       }
-      const noun = topic === BRIEF_TOPICS.Storeys ? 'storey' : topic.replace(/s$/, '');
-      requirements.push({
-        topic,
-        value: count,
-        statement: count === 1 ? `1 ${noun}` : `${count} ${noun}s`
-      });
-    }
 
-    for (const [topic, name] of FLAG_ARGUMENTS) {
-      const flag = args[name];
-      if (typeof flag !== 'boolean') {
-        continue;
+      for (const [topic, name] of FLAG_ARGUMENTS) {
+        const flag = args[name];
+        if (typeof flag !== 'boolean') {
+          continue;
+        }
+        requirements.push({
+          topic,
+          value: flag,
+          statement: flag ? `a ${topic}` : `no ${topic}`
+        });
       }
-      requirements.push({
-        topic,
-        value: flag,
-        statement: flag ? `a ${topic}` : `no ${topic}`
+
+      if (typeof args['style'] === 'string' && args['style'].trim().length > 0) {
+        const style = args['style'].trim();
+        requirements.push({ topic: BRIEF_TOPICS.Style, value: style, statement: `${style} style` });
+      }
+      if (typeof args['budget'] === 'string' && args['budget'].trim().length > 0) {
+        const budget = args['budget'].trim();
+        requirements.push({
+          topic: BRIEF_TOPICS.Budget,
+          value: budget,
+          statement: `a budget of ${budget}`
+        });
+      }
+      const totalArea = asFiniteNumber(args['totalArea']);
+      if (totalArea !== undefined && totalArea > 0) {
+        requirements.push({
+          topic: BRIEF_TOPICS.TotalArea,
+          value: totalArea,
+          statement: `a total area of about ${totalArea} m²`
+        });
+      }
+
+      const objectives = asStrings(args['objectives']);
+      const spaces = asSpaces(args['spaces']);
+      const relationships = asRelationships(args['relationships']);
+
+      // The user's own words. The model's arguments are a *reading* of them, and
+      // Bug 003 is what the difference costs: a `totalArea` the model did not
+      // pass is gone unless something re-reads the sentence it came from.
+      const userMessage = (
+        context['conversation'] as { readonly lastUserMessage?: string } | undefined
+      )?.lastUserMessage;
+
+      // The utterance the brief quotes back. Still the model's objective first —
+      // it is a summary of the whole conversation, where `userMessage` is only
+      // the last turn of it, and a Brief that quotes "yes please" quotes nothing.
+      const utterance = objectives[0] ?? userMessage ?? 'A design request';
+
+      // Story 1.5.2. A project that already holds a Brief gets a *revision* of
+      // it, never a second one. Reading it back is the whole reason this tool
+      // became service-bound.
+      const approved = intelligence.approvedBrief();
+      if (approved !== undefined) {
+        return reviseApproved(approved, {
+          objectives,
+          spaces,
+          requirements,
+          relationships,
+          ...(userMessage === undefined ? {} : { userMessage })
+        });
+      }
+
+      const brief = assembleBriefFromFields({
+        utterance,
+        objectives,
+        spaces,
+        requirements,
+        relationships,
+        ...(userMessage === undefined ? {} : { userMessage })
       });
+
+      // An incomplete Brief is not an error and not a proposal: it is a question.
+      // The model left something out, so the host asks rather than inventing it.
+      if (brief.openQuestions.length > 0) {
+        return {
+          kind: 'blocked',
+          message: describeClarification(clarificationFor(brief, brief.openQuestions))
+        };
+      }
+
+      return { kind: 'proposal', proposal: toBriefProposal(brief) };
     }
+  };
+}
 
-    if (typeof args['style'] === 'string' && args['style'].trim().length > 0) {
-      const style = args['style'].trim();
-      requirements.push({ topic: BRIEF_TOPICS.Style, value: style, statement: `${style} style` });
-    }
-    if (typeof args['budget'] === 'string' && args['budget'].trim().length > 0) {
-      const budget = args['budget'].trim();
-      requirements.push({
-        topic: BRIEF_TOPICS.Budget,
-        value: budget,
-        statement: `a budget of ${budget}`
-      });
-    }
-    const totalArea = asFiniteNumber(args['totalArea']);
-    if (totalArea !== undefined && totalArea > 0) {
-      requirements.push({
-        topic: BRIEF_TOPICS.TotalArea,
-        value: totalArea,
-        statement: `a total area of about ${totalArea} m²`
-      });
-    }
-
-    const objectives = asStrings(args['objectives']);
-    const spaces = asSpaces(args['spaces']);
-
-    // The utterance the brief quotes back. The conversation fragment is the
-    // closest thing this tool has to the user's own words — the model's
-    // arguments are a reading of them, not the words themselves.
-    const utterance =
-      objectives[0] ??
-      (context['conversation'] as { readonly lastUserMessage?: string } | undefined)
-        ?.lastUserMessage ??
-      'A design request';
-
-    const brief = assembleBriefFromFields({
-      utterance,
-      objectives,
-      spaces,
-      requirements
-    });
-
-    // An incomplete Brief is not an error and not a proposal: it is a question.
-    // The model left something out, so the host asks rather than inventing it.
-    if (brief.openQuestions.length > 0) {
-      return {
-        kind: 'blocked',
-        message: describeClarification(clarificationFor(brief, brief.openQuestions))
-      };
-    }
-
-    return { kind: 'proposal', proposal: toBriefProposal(brief) };
+/**
+ * A re-capture, folded into the Brief the project holds (Stories 1.5.3, 1.5.4).
+ *
+ * The `utterance` is deliberately not passed through: a tool call carries
+ * structured fields and no sentence of its own, so the Brief keeps the words it
+ * was first described with.
+ */
+function reviseApproved(
+  approved: ArchitecturalBrief,
+  fields: {
+    readonly objectives: readonly string[];
+    readonly spaces: readonly DesiredSpace[];
+    readonly requirements: readonly {
+      readonly topic: string;
+      readonly value: string | number | boolean;
+      readonly statement: string;
+    }[];
+    readonly relationships: readonly SpaceRelationship[];
+    /** The user's own words, re-read for the topics the model omitted (Bug 003). */
+    readonly userMessage?: string;
   }
-};
+): ResolvedToolCall {
+  const revised = reviseBriefFromFields(approved, {
+    requirements: fields.requirements,
+    spaces: fields.spaces,
+    relationships: fields.relationships,
+    objectives: fields.objectives,
+    ...(fields.userMessage === undefined ? {} : { userMessage: fields.userMessage })
+  });
+
+  if (revised === undefined) {
+    // Bug 002's loop ends here. Superseding revision n with an identical
+    // revision n+1 would be supersession theatre, and the vocabulary already has
+    // the word for it.
+    return { kind: 'blocked', message: BRIEF_ALREADY_SAYS_THAT };
+  }
+
+  return { kind: 'proposal', proposal: toBriefProposal(revised) };
+}

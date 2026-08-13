@@ -26,7 +26,7 @@ import {
   reviseGeometryGraph,
   storeyArea,
   synthesizeGeometry,
-  toGeometryProposal,
+  toGeometryGraphProposal,
   type GeometryGraph
 } from '../geometry/index.js';
 import { LAYOUT_PLAN_KIND, synthesizeLayout, type LayoutPlan } from '../layout/index.js';
@@ -74,6 +74,16 @@ function geometryFrom(layout: LayoutPlan): GeometryGraph {
   return result.graph;
 }
 
+/**
+ * A project holding a coherent chain.
+ *
+ * Each upstream artefact is stored under the identity the artefact below it
+ * records having been derived from. Since Sprint 1.2 that matters: a project
+ * whose Programme names a Brief the project does not hold has a **stale**
+ * Programme, the geometry lane closes, and the classifier is right to close it
+ * (ADR-AI-0002 Rule 7). Before the workflow state existed nothing looked, so
+ * these fixtures could store three unrelated artefacts and still reach the lane.
+ */
 function serviceWith(
   layout: LayoutPlan | undefined,
   planner?: ArchitecturalPlanner
@@ -84,11 +94,23 @@ function serviceWith(
     knowledge: createHarness().knowledge,
     ...(planner === undefined ? {} : { planner }),
     artefacts: createInMemoryPlanningArtefactReader([
-      { kind: ARCHITECTURAL_BRIEF_KIND, id: brief.id, revision: 1, value: brief },
-      { kind: SPACE_PROGRAMME_KIND, id: programme.id, revision: 1, value: programme },
+      {
+        kind: ARCHITECTURAL_BRIEF_KIND,
+        id: programme.sourceBrief.briefId,
+        revision: programme.sourceBrief.briefRevision,
+        value: brief
+      },
       ...(layout === undefined
-        ? []
-        : [{ kind: LAYOUT_PLAN_KIND, id: layout.id, revision: layout.revision, value: layout }])
+        ? [{ kind: SPACE_PROGRAMME_KIND, id: programme.id, revision: 1, value: programme }]
+        : [
+            {
+              kind: SPACE_PROGRAMME_KIND,
+              id: layout.sourceProgramme.programmeId,
+              revision: layout.sourceProgramme.programmeRevision,
+              value: programme
+            },
+            { kind: LAYOUT_PLAN_KIND, id: layout.id, revision: layout.revision, value: layout }
+          ])
     ])
   });
 }
@@ -389,7 +411,7 @@ describe('geometry review', () => {
   it('is an artefact proposal that executes nothing (Rule 7)', () => {
     const layout = layoutFor(TWO_STOREY);
     const graph = geometryFrom(layout);
-    const proposal = toGeometryProposal(graph, { expected: expectedInstances(layout) });
+    const proposal = toGeometryGraphProposal(graph, { expected: expectedInstances(layout) });
 
     expect(proposal.subject).toEqual({
       kind: 'artefact',
@@ -401,7 +423,7 @@ describe('geometry review', () => {
 
   it('shows what is guaranteed and what can be improved', () => {
     const layout = layoutFor(TWO_STOREY);
-    const proposal = toGeometryProposal(geometryFrom(layout), {
+    const proposal = toGeometryGraphProposal(geometryFrom(layout), {
       expected: expectedInstances(layout)
     });
 
@@ -414,7 +436,7 @@ describe('geometry review', () => {
     const graph = geometryFrom(layout);
 
     expect(() =>
-      toGeometryProposal(reviseGeometryGraph(graph, { polygons: [] }), {
+      toGeometryGraphProposal(reviseGeometryGraph(graph, { polygons: [] }), {
         expected: expectedInstances(layout)
       })
     ).toThrow(/empty/i);

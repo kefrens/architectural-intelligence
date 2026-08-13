@@ -277,7 +277,16 @@ describe('functional relationships', () => {
     for (const adjacency of programme.adjacencies) {
       expect(spaceIds.has(adjacency.fromSpaceId)).toBe(true);
       expect(spaceIds.has(adjacency.toSpaceId)).toBe(true);
-      expect(Object.keys(adjacency)).toEqual(['fromSpaceId', 'toSpaceId', 'strength', 'reason']);
+      // `source` joined in Bug 004 (ADR-AI-0003 Rule 4). The assertion stays
+      // exhaustive on purpose: it is what would catch an entity id arriving
+      // under a new field name.
+      expect(Object.keys(adjacency)).toEqual([
+        'fromSpaceId',
+        'toSpaceId',
+        'strength',
+        'reason',
+        'source'
+      ]);
     }
   });
 

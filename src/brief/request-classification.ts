@@ -72,7 +72,35 @@ export const REQUEST_LANES = {
    * {@link ClassifyRequestOptions.hasApprovedLayout}, so it is unreachable for
    * every caller that has not opted in.
    */
-  GeometryGeneration: 'geometry-generation'
+  GeometryGeneration: 'geometry-generation',
+  /**
+   * The project has an approved Geometry Graph and the user is asking for the
+   * buildable specification that follows from it (Sprint 1.2, Story 1.2.1 —
+   * ADR-AI-0001 Rule 2).
+   *
+   * The seventh lane, and the last: the design pipeline has five artefacts and
+   * this is the one that reaches the fifth. Until this sprint the stage existed
+   * and was reachable only through `planning_generateSpecification` — a model
+   * could ask for it and a user could not.
+   *
+   * Guarded like the three lanes above it, by
+   * {@link ClassifyRequestOptions.hasApprovedGeometry}.
+   */
+  SpecificationGeneration: 'specification-generation',
+  /**
+   * The project has an approved Brief and the user is changing what they asked
+   * for (Sprint 1.3, Story 1.3.6 — ADR-0027.1 Rule 4).
+   *
+   * The eighth lane, and the only one that reaches *back* up the pipeline. It
+   * produces revision n+1 of the approved Brief rather than a second Brief, and
+   * everything downstream goes stale as a consequence — which the workflow state
+   * has been able to report since Sprint 1.2 and could not be reached until now.
+   *
+   * Guarded by {@link ClassifyRequestOptions.hasBriefToRevise}, which asks a
+   * different question from the four stage gates beside it: not "is the next
+   * stage available" but "is there a Brief here to revise at all".
+   */
+  BriefRevision: 'brief-revision'
 } as const;
 
 export type RequestLane = (typeof REQUEST_LANES)[keyof typeof REQUEST_LANES];
@@ -134,7 +162,38 @@ export interface ClassifyRequestOptions {
    * Defaults to `false`.
    */
   readonly hasApprovedLayout?: boolean;
+  /**
+   * Whether this project has an approved Geometry Graph (Sprint 1.2).
+   * Defaults to `false`.
+   */
+  readonly hasApprovedGeometry?: boolean;
+  /**
+   * Whether this project holds an approved Brief that could be revised
+   * (Sprint 1.3). Defaults to `false`.
+   *
+   * **A different question from the four above.** Those ask whether the stage
+   * *below* the named artefact can be generated — `hasApprovedBrief` gates the
+   * programme lane and therefore means "there is a current Brief to build a
+   * programme from". This one asks whether there is a Brief to *change*, which
+   * is true even when it has been superseded and false when the project has
+   * none. Two questions, two options, rather than one option meaning two things
+   * depending on the lane that reads it.
+   */
+  readonly hasBriefToRevise?: boolean;
 }
+
+/**
+ * Since Sprint 1.2 each of these four means **approved _and_ current**, not
+ * merely approved (ADR-AI-0002 Rule 7). The service derives them from the
+ * workflow-state projection, which is the only place the pipeline's prerequisite
+ * rules live — arranging a superseded Programme produces a Layout that is stale
+ * on the day it is approved, so the lane closes and the stage above it stays
+ * open until the user regenerates.
+ *
+ * The names did not change because the meaning is the same question asked more
+ * precisely, and a caller passing plain booleans still classifies exactly as it
+ * did.
+ */
 
 /**
  * Words that ask for the programme rather than for a building.
@@ -146,6 +205,35 @@ export interface ClassifyRequestOptions {
  */
 const PROGRAMME_WORDS =
   /\b(space\s+programme|space\s+program|programme|program|room\s+schedule|schedule\s+of\s+accommodation|room\s+list|the\s+spaces)\b/i;
+
+/**
+ * Words that ask for the construction rather than for the geometry.
+ *
+ * ## Why `wall` singular is missing, and stays missing
+ *
+ * The narrowest word set in this file, and deliberately the narrowest, because
+ * this lane is the one that could break Story 27.8.3's promise. "Create a wall
+ * from (0,0) to (4,0)" is a modelling command, it says `wall`, and it says
+ * `create` — which is in {@link PROGRAMME_VERBS}. A word set containing `wall`
+ * would hijack it the moment a project approved its geometry, which is exactly
+ * the failure the classifier's direct-lane bias exists to prevent.
+ *
+ * **Plural only.** A user drawing one wall names one wall; a user asking for the
+ * construction of a whole design asks for "the walls". "Move the kitchen wall
+ * 200 mm" and every other single-wall command stay in the direct lane by
+ * construction rather than by a special case.
+ */
+const SPECIFICATION_WORDS =
+  /\b(walls|wall\s+thickness|thickness|construction|buildable|specification|spec)\b/i;
+
+/**
+ * Verbs that ask for the construction to be resolved.
+ *
+ * Beside {@link PROGRAMME_VERBS} rather than inside it: `give` belongs to "give
+ * it walls" and to nothing else in this pipeline, and widening the shared verb
+ * set would change three lanes to serve one.
+ */
+const SPECIFICATION_VERBS = /\b(specify|resolve|thicken|give)\b/i;
 
 /**
  * Words that ask for geometry rather than for the arrangement.
@@ -167,6 +255,19 @@ const GEOMETRY_WORDS =
 const LAYOUT_WORDS =
   /\b(layout|lay\s?out|plan\s+the\s+spaces|arrangement|arrange|floor\s+plan|floorplan|organise|organize|zoning|circulation)\b/i;
 
+/**
+ * Phrases that change a decision rather than ask for a new one (Sprint 1.3).
+ *
+ * A cue is necessary but never sufficient: the utterance must **also** state a
+ * brief topic the reader recognises. Both halves are required for the same
+ * reason the specification lane matches only plural `walls` — "actually, move
+ * the kitchen wall 200 mm" is a correction *and* a modelling command, and the
+ * direct lane is where it belongs. Requiring a brief topic is what tells the two
+ * apart mechanically rather than by intuition.
+ */
+const REVISION_CUES =
+  /\b(actually|instead|rather|revise|change|update|correct|make\s+it|no,|scrap|amend)\b/i;
+
 /** Verbs that ask for something to be produced from what already exists. */
 const PROGRAMME_VERBS =
   /\b(generate|create|build|make|write|draw\s+up|produce|prepare|work\s+out|now|next|continue|proceed|go\s+ahead)\b/i;
@@ -182,6 +283,22 @@ export function classifyRequest(
   // Platform can answer it today, which is the definition of Direct Execution.
   if (recognizeIntent(trimmed).kind === ARCHITECTURAL_INTENT_KINDS.Question) {
     return direct('This is a question about the existing project.');
+  }
+
+  // The specification lane (Sprint 1.2), checked before the geometry lane and
+  // for the same reason that one is checked before the layout lane: a project
+  // that has approved its geometry and asks to "give it walls" wants the stage
+  // it does not have.
+  if (options.hasApprovedGeometry === true && SPECIFICATION_WORDS.test(trimmed)) {
+    if (PROGRAMME_VERBS.test(trimmed) || SPECIFICATION_VERBS.test(trimmed)) {
+      return {
+        lane: REQUEST_LANES.SpecificationGeneration,
+        reason: 'This asks for the construction, and a geometry graph has been approved.',
+        signals: ['approved geometry'],
+        missing: []
+      };
+    }
+    return direct('This mentions the construction but asks for nothing to be produced.');
   }
 
   // The geometry lane (Sprint 28.1a), checked before the layout lane.
@@ -228,6 +345,26 @@ export function classifyRequest(
     // "What is in the programme?" is a question about an artefact, not a request
     // to build one, and this sprint has nothing that answers it.
     return direct('This mentions the programme but asks for nothing to be produced.');
+  }
+
+  // The revision lane (Sprint 1.3), checked before the dwelling test because
+  // "actually make it a three-storey house" names a dwelling *and* a design
+  // verb, and would otherwise assemble a second Brief for a project that
+  // already has one — which is the lineage split this sprint exists to end.
+  if (options.hasBriefToRevise === true && REVISION_CUES.test(trimmed)) {
+    const restated = readBriefTopics(trimmed);
+    if (restated.length > 0) {
+      return {
+        lane: REQUEST_LANES.BriefRevision,
+        reason: 'This changes something the approved brief already states.',
+        signals: restated.map((requirement) => requirement.topic),
+        missing: []
+      };
+    }
+    // A revision cue with no brief topic in it — "actually, move the kitchen
+    // wall". The user is changing their mind about something that is not in the
+    // Brief, and the direct lane is where that has always gone.
+    return direct('This asks for a change, but names nothing the brief states.');
   }
 
   const signals: string[] = [];

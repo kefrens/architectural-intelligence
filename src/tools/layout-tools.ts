@@ -17,6 +17,8 @@
 
 import type { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import type { ResolvedToolCall, ToolDefinition } from '@archisimple/ai-engine';
+import { PLANNING_STAGES } from '../planning/planning-stage.js';
+import { PLANNING_TOOL_NAMES } from './planning-tool-names.js';
 
 export function createLayoutToolDefinition(
   intelligence: ArchitecturalIntelligenceService
@@ -27,7 +29,7 @@ export function createLayoutToolDefinition(
     schema: {
       type: 'function',
       function: {
-        name: 'planning_generateLayout',
+        name: PLANNING_TOOL_NAMES[PLANNING_STAGES.Layout],
         description:
           'Arranges the approved space programme into a layout: which storey each space sits on, what ends up next to what, and how circulation works. Call this when the user asks for the layout, the arrangement, or what comes next after approving a programme. Takes no arguments — every decision is derived from the approved programme, not from you.',
         parameters: { type: 'object', properties: {}, required: [] }

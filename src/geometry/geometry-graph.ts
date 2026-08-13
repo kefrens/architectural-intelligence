@@ -177,6 +177,10 @@ export function reviseGeometryGraph(
       | 'adjacencies'
       | 'assumptions'
       | 'warnings'
+      // Sprint 1.3: a revision regenerated from a newer Layout must record that
+      // Layout, or staleness would be computed against a provenance that lies.
+      | 'sourceLayout'
+      | 'contributedBy'
     >
   >
 ): GeometryGraph {

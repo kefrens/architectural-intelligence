@@ -7,6 +7,7 @@ export {
   matchesBrief,
   programmeSpace,
   reviseProgramme,
+  withPreviousSpaceIds,
   SPACE_PRIORITIES,
   SPACE_PROGRAMME_KIND,
   summarizeProgramme,

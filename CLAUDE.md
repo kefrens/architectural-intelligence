@@ -22,6 +22,18 @@ property the extraction was for.
 Read `../archisimple/docs/adr/` only if you have that checkout; the rules those
 ADRs set are summarised where they bite, below.
 
+## Read before designing anything
+
+| Document                                                                     | What it gives you                                                            |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [docs/architecture/00-current-state.yaml](docs/architecture/00-current-state.yaml) | **Start here.** Machine-readable inventory of everything implemented here.    |
+| [docs/architecture/00-current-state.md](docs/architecture/00-current-state.md)     | The same, in prose, with the reasoning behind each decision.                  |
+| [docs/adr/ADR-AI-0001-geometry-specification.md](docs/adr/ADR-AI-0001-geometry-specification.md) | The Geometry Specification — the final artefact, and the contract with any host. |
+
+`00-current-state.*` describes **what is implemented**, never what is planned.
+Its `notImplemented` section exists so the document can stay honest — update
+both files when a sprint lands, and only with what actually shipped.
+
 ## The release order, which is not optional
 
 **The platform releases first; this repository consumes a released version**

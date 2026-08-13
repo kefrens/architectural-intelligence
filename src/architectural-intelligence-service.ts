@@ -88,6 +88,8 @@ import {
   describeClarification,
   isBriefComplete,
   REQUEST_LANES,
+  reviseBriefFrom,
+  reviseBriefFromFields,
   startBriefDraft,
   toBriefProposal,
   type ArchitecturalBrief,
@@ -103,6 +105,7 @@ import {
 import {
   ArchitecturalPlanner,
   createBuiltInOperationProviders,
+  PLAN_BLOCKER_REASONS,
   type ArchitecturalCapability,
   type ArchitecturalOperationProvider,
   type PlanBlocker,
@@ -111,6 +114,8 @@ import {
 } from './planning/index.js';
 import {
   describeProgramme,
+  reviseProgramme,
+  withPreviousSpaceIds,
   SPACE_PROGRAMME_KIND,
   synthesizeProgramme,
   toProgrammeProposal,
@@ -119,19 +124,30 @@ import {
 import {
   describeLayout,
   LAYOUT_PLAN_KIND,
+  reviseLayoutPlan,
   synthesizeLayout,
   toLayoutProposal,
   type LayoutPlan
 } from './layout/index.js';
 import {
   describeGeometry,
+  describeSpecification,
   expectedInstances,
   gateGeometryGraph,
+  gateGeometrySpecification,
+  GEOMETRY_GRAPH_KIND,
+  GEOMETRY_SPECIFICATION_KIND,
+  reviseGeometryGraph,
+  reviseGeometrySpecification,
   synthesizeGeometry,
-  toGeometryProposal,
-  type GeometryGraph
+  synthesizeSpecification,
+  toGeometryGraphProposal,
+  toGeometrySpecificationProposal,
+  type GeometryGraph,
+  type GeometrySpecification
 } from './geometry/index.js';
-import { PLANNING_STAGES } from './planning/planning-stage.js';
+import { changesAnything, nothingToRegenerate } from './artefacts/artefact-revision.js';
+import { PLANNING_STAGES, type PlanningStage } from './planning/planning-stage.js';
 import {
   type ApprovedArtefact,
   type PlanningArtefactReader
@@ -142,6 +158,11 @@ import {
   type ArchitecturalAnswer,
   type BuildingKnowledge
 } from './understanding/index.js';
+import {
+  deriveWorkflowState,
+  stageState,
+  type ArchitecturalWorkflowState
+} from './workflow/index.js';
 
 export interface ArchitecturalIntelligenceServiceOptions {
   readonly knowledge: BuildingKnowledge;
@@ -196,6 +217,8 @@ export interface ArchitecturalResponse {
   readonly layout?: LayoutPlan;
   /** Present when the turn produced a Geometry Graph (Sprint 28.1a). Carried by `proposal` too. */
   readonly geometry?: GeometryGraph;
+  /** Present when the turn produced a Geometry Specification (Sprint 1.1). Carried by `proposal` too. */
+  readonly specification?: GeometrySpecification;
 }
 
 export class ArchitecturalIntelligenceService {
@@ -258,6 +281,43 @@ export class ArchitecturalIntelligenceService {
   }
 
   /**
+   * Where this design is, and what can be asked for next (Sprint 1.2, Story
+   * 1.2.12 — ADR-AI-0002).
+   *
+   * The five stages with what the project holds for each, which of them have
+   * gone stale, why a stage cannot proceed, and what this service can be asked
+   * to do about it.
+   *
+   * **Derived on every call, stored nowhere** (Rule 1). There is no field behind
+   * this method and no memo in front of it: the answer is a function of what the
+   * artefact reader holds *now*, and a cached verdict about which revision is
+   * current goes stale the instant a revision lands — the same reason layout
+   * quality and packing evaluation are absent from their own artefacts.
+   *
+   * **It advances nothing** (Rule 12). No artefact is generated, no `Proposal`
+   * built, no draft touched and no provider consulted, so it is safe to call on
+   * every render.
+   *
+   * **It reports no proposal.** This service hands a `Proposal` to the host and
+   * never learns whether the user approved it — what it learns is that an
+   * artefact became readable. A host showing "awaiting approval" merges its own
+   * `pendingProposal()` onto this (Rule 2).
+   *
+   * With no artefact reader wired, this answers five untouched stages rather
+   * than throwing (Rule 11).
+   */
+  workflowState(): ArchitecturalWorkflowState {
+    const draft = this.briefDrafts?.load();
+    return deriveWorkflowState({
+      ...(this.artefacts === undefined ? {} : { artefacts: this.artefacts }),
+      // "Open" means the same thing here as it does to `continueClarification`:
+      // a draft with questions still outstanding. A complete one is offered for
+      // approval in the turn that completes it and cleared in the same breath.
+      hasBriefDraft: draft !== undefined && !isBriefComplete(draft)
+    });
+  }
+
+  /**
    * Reads one utterance and answers it.
    *
    * Never throws for an unusable request: a phrase this layer cannot act on
@@ -273,13 +333,23 @@ export class ArchitecturalIntelligenceService {
       return continued;
     }
 
-    const approvedBrief = this.approvedBrief();
-    const approvedProgramme = this.approvedProgramme();
-    const approvedLayout = this.approvedLayout();
+    // Sprint 1.2, Story 1.2.14. The four stage gates come from one derivation
+    // rather than from four separate `approved*` reads, so the lane a
+    // conversation may take and the stage a panel may offer cannot disagree
+    // (ADR-AI-0002 Rule 8). They also tighten in the process: a stage is gated on
+    // its input being approved *and current*, so a project whose Brief was
+    // revised after its Programme was approved stops offering the layout lane
+    // and offers the programme lane instead — which is the correct next step and
+    // was previously unreachable without the user knowing to ask for it.
+    const workflow = this.workflowState();
     const classification = classifyRequest(utterance, {
-      hasApprovedBrief: approvedBrief !== undefined,
-      hasApprovedProgramme: approvedProgramme !== undefined,
-      hasApprovedLayout: approvedLayout !== undefined
+      hasApprovedBrief: this.isEligible(workflow, PLANNING_STAGES.Programme),
+      hasApprovedProgramme: this.isEligible(workflow, PLANNING_STAGES.Layout),
+      hasApprovedLayout: this.isEligible(workflow, PLANNING_STAGES.Geometry),
+      hasApprovedGeometry: this.isEligible(workflow, PLANNING_STAGES.Specification),
+      // Sprint 1.3, and a different question from the four above: whether there
+      // is a Brief to change, not whether the stage below it can be built.
+      hasBriefToRevise: stageState(workflow, PLANNING_STAGES.Brief)?.approved !== undefined
     });
     const intent = recognizeIntent(utterance);
 
@@ -287,7 +357,19 @@ export class ArchitecturalIntelligenceService {
       return { ...this.interpretIntent(intent), classification };
     }
 
+    if (classification.lane === REQUEST_LANES.BriefRevision) {
+      return { ...this.reviseApprovedBrief(utterance, intent), classification };
+    }
+
+    if (classification.lane === REQUEST_LANES.SpecificationGeneration) {
+      const approvedGeometry = this.approvedGeometry();
+      return approvedGeometry === undefined
+        ? { intent, message: NO_APPROVED_GEOMETRY, classification }
+        : { ...this.generateSpecification(approvedGeometry, intent), classification };
+    }
+
     if (classification.lane === REQUEST_LANES.GeometryGeneration) {
+      const approvedLayout = this.approvedLayout();
       return approvedLayout === undefined
         ? { intent, message: NO_APPROVED_LAYOUT, classification }
         : { ...this.generateGeometry(approvedLayout, intent), classification };
@@ -296,6 +378,7 @@ export class ArchitecturalIntelligenceService {
     if (classification.lane === REQUEST_LANES.LayoutGeneration) {
       // Reachable only when the reader answered, so `approvedProgramme` is
       // present here by construction; the guard is for the type.
+      const approvedProgramme = this.approvedProgramme();
       return approvedProgramme === undefined
         ? { intent, message: NO_APPROVED_PROGRAMME, classification }
         : { ...this.generateLayout(approvedProgramme, intent), classification };
@@ -305,12 +388,22 @@ export class ArchitecturalIntelligenceService {
       // The lane is only reachable when the reader answered, so `approvedBrief`
       // is present here by construction; the guard is for the type, not for a
       // case that can occur.
+      const approvedBrief = this.approvedBrief();
       return approvedBrief === undefined
         ? { intent, message: NO_APPROVED_BRIEF, classification }
         : { ...this.generateProgramme(approvedBrief, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.BriefGeneration) {
+      // Story 1.5.6. A complete design request arriving at a project that
+      // already holds a Brief is a *revision* of it, not a second one. Before
+      // Sprint 1.5 this branch called `assembleBrief` unconditionally and minted
+      // a new lineage — one of Bug 002's three fork paths, and the one that fires
+      // when a user re-describes their building without a revision cue.
+      if (this.approvedBrief() !== undefined) {
+        return { ...this.reviseApprovedBrief(utterance, intent), classification };
+      }
+
       const brief = assembleBrief({ utterance, classification });
       return {
         intent,
@@ -376,16 +469,48 @@ export class ArchitecturalIntelligenceService {
     layout: LayoutPlan,
     intent: ArchitecturalIntent = recognizeIntent('')
   ): ArchitecturalResponse {
+    const superseded = this.supersededInput(
+      LAYOUT_PLAN_KIND,
+      layout,
+      'layout',
+      PLANNING_STAGES.Geometry
+    );
+    if (superseded !== undefined) {
+      return { intent, message: superseded.message, blocker: superseded };
+    }
+
     const synthesized = synthesizeGeometry({ layout });
     if (!synthesized.ok) {
       return { intent, message: synthesized.message };
     }
 
-    const geometry = this.planner.enrich(
+    const enriched = this.planner.enrich(
       PLANNING_STAGES.Geometry,
       synthesized.graph,
       this.knowledge
     );
+
+    // Story 1.3.7 — revision, not replacement. See `generateProgramme`.
+    const previousGraph = this.approvedGeometry();
+    const patch = {
+      polygons: enriched.polygons,
+      wallCandidates: enriched.wallCandidates,
+      openingCandidates: enriched.openingCandidates,
+      adjacencies: enriched.adjacencies,
+      assumptions: enriched.assumptions,
+      warnings: enriched.warnings,
+      sourceLayout: enriched.sourceLayout,
+      ...(enriched.contributedBy === undefined ? {} : { contributedBy: enriched.contributedBy })
+    };
+
+    // Bug 005.
+    if (previousGraph !== undefined && !changesAnything(previousGraph, patch)) {
+      const blocker = nothingToRegenerate({ stage: 'geometry', nextStage: 'specification' });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    const geometry =
+      previousGraph === undefined ? enriched : reviseGeometryGraph(previousGraph, patch);
 
     const gate = gateGeometryGraph(geometry, layout);
     if (!gate.ok) {
@@ -395,8 +520,103 @@ export class ArchitecturalIntelligenceService {
     return {
       intent,
       message: describeGeometry(geometry),
-      proposal: toGeometryProposal(geometry, { expected: expectedInstances(layout) }),
+      proposal: toGeometryGraphProposal(geometry, { expected: expectedInstances(layout) }),
       geometry
+    };
+  }
+
+  /** The Geometry Graph this project has approved, if any (Sprint 1.1). */
+  approvedGeometry(): GeometryGraph | undefined {
+    const artefact = this.artefacts?.current(GEOMETRY_GRAPH_KIND);
+    return isArtefactValue(artefact) ? (artefact.value as GeometryGraph) : undefined;
+  }
+
+  /** The Geometry Specification this project has approved, if any (Sprint 1.1). */
+  approvedSpecification(): GeometrySpecification | undefined {
+    const artefact = this.artefacts?.current(GEOMETRY_SPECIFICATION_KIND);
+    return isArtefactValue(artefact) ? (artefact.value as GeometrySpecification) : undefined;
+  }
+
+  /**
+   * Builds and offers the Geometry Specification for an approved Geometry Graph
+   * (Sprint 1.1 — ADR-AI-0001).
+   *
+   * Same order as the stage above, and for the same reason: synthesise,
+   * **enrich**, **then gate**. A stage provider that breaks an invariant is
+   * caught by the same check as broken synthesis, and neither reaches the user.
+   *
+   * ## Regenerating produces a revision, not a second artefact
+   *
+   * Story 1.1.13, generalised by Story 1.3.7. If the project already has an
+   * approved Specification, this returns revision n+1 of it rather than a new
+   * artefact at revision 1 (Rule 9).
+   *
+   * Sprint 1.1 made that conditional on `matchesGeometryGraph` — revision only
+   * when the Graph was the *same* one — which left the other case minting a
+   * second Specification at revision 1, so a project that revised its geometry
+   * ended up holding two lineages with nothing to say which it meant. Sprint 1.3
+   * drops the condition: a stage the project holds is always revised, and
+   * `sourceGeometry` records which Graph this revision came from. The predicate
+   * still answers that question; it no longer decides the artefact's identity.
+   */
+  generateSpecification(
+    graph: GeometryGraph,
+    intent: ArchitecturalIntent = recognizeIntent('')
+  ): ArchitecturalResponse {
+    const superseded = this.supersededInput(
+      GEOMETRY_GRAPH_KIND,
+      graph,
+      'geometry',
+      PLANNING_STAGES.Specification
+    );
+    if (superseded !== undefined) {
+      return { intent, message: superseded.message, blocker: superseded };
+    }
+
+    const synthesized = synthesizeSpecification({ graph });
+    if (!synthesized.ok) {
+      return { intent, message: synthesized.message };
+    }
+
+    const enriched = this.planner.enrich(
+      PLANNING_STAGES.Specification,
+      synthesized.specification,
+      this.knowledge
+    );
+
+    const previous = this.approvedSpecification();
+    const patch = {
+      storeys: enriched.storeys,
+      spaces: enriched.spaces,
+      walls: enriched.walls,
+      openings: enriched.openings,
+      constraints: enriched.constraints,
+      assumptions: enriched.assumptions,
+      warnings: enriched.warnings,
+      sourceGeometry: enriched.sourceGeometry,
+      ...(enriched.contributedBy === undefined ? {} : { contributedBy: enriched.contributedBy })
+    };
+
+    // Bug 005. The last stage, so there is nowhere to send the user next — the
+    // suggestion says what would make a revision meaningful instead.
+    if (previous !== undefined && !changesAnything(previous, patch)) {
+      const blocker = nothingToRegenerate({ stage: 'specification' });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    const specification =
+      previous === undefined ? enriched : reviseGeometrySpecification(previous, patch);
+
+    const gate = gateGeometrySpecification(specification, graph);
+    if (!gate.ok) {
+      return { intent, message: gate.message };
+    }
+
+    return {
+      intent,
+      message: describeSpecification(specification),
+      proposal: toGeometrySpecificationProposal(specification),
+      specification
     };
   }
 
@@ -410,6 +630,16 @@ export class ArchitecturalIntelligenceService {
     programme: SpaceProgramme,
     intent: ArchitecturalIntent = recognizeIntent('')
   ): ArchitecturalResponse {
+    const superseded = this.supersededInput(
+      SPACE_PROGRAMME_KIND,
+      programme,
+      'space programme',
+      PLANNING_STAGES.Layout
+    );
+    if (superseded !== undefined) {
+      return { intent, message: superseded.message, blocker: superseded };
+    }
+
     const synthesized = synthesizeLayout({ programme });
     if (!synthesized.ok) {
       return { intent, message: synthesized.message };
@@ -417,7 +647,39 @@ export class ArchitecturalIntelligenceService {
 
     // Rule 10: providers enrich before the artefact is offered, never after it
     // is approved. A layout the user approved is the layout the user saw.
-    const layout = this.planner.enrich(PLANNING_STAGES.Layout, synthesized.plan, this.knowledge);
+    const enriched = this.planner.enrich(PLANNING_STAGES.Layout, synthesized.plan, this.knowledge);
+
+    // Story 1.3.7 — revision, not replacement. See `generateProgramme`.
+    const previous = this.approvedLayout();
+    if (previous === undefined) {
+      return {
+        intent,
+        message: describeLayout(enriched),
+        proposal: toLayoutProposal(enriched),
+        layout: enriched
+      };
+    }
+
+    const patch = {
+      spaces: enriched.spaces,
+      graph: enriched.graph,
+      adjacencies: enriched.adjacencies,
+      circulation: enriched.circulation,
+      assumptions: enriched.assumptions,
+      warnings: enriched.warnings,
+      sourceProgramme: enriched.sourceProgramme,
+      ...(enriched.contributedBy === undefined ? {} : { contributedBy: enriched.contributedBy })
+    };
+
+    // Bug 005. Layout node ids are programme space ids, so they are already
+    // stable when the programme's are — which is the other half of what
+    // `withPreviousSpaceIds` buys.
+    if (!changesAnything(previous, patch)) {
+      const blocker = nothingToRegenerate({ stage: 'layout', nextStage: 'geometry' });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    const layout = reviseLayoutPlan(previous, patch);
 
     return {
       intent,
@@ -437,6 +699,16 @@ export class ArchitecturalIntelligenceService {
     brief: ArchitecturalBrief,
     intent: ArchitecturalIntent = recognizeIntent(brief.utterance)
   ): ArchitecturalResponse {
+    const superseded = this.supersededInput(
+      ARCHITECTURAL_BRIEF_KIND,
+      brief,
+      'brief',
+      PLANNING_STAGES.Programme
+    );
+    if (superseded !== undefined) {
+      return { intent, message: superseded.message, blocker: superseded };
+    }
+
     const synthesized = synthesizeProgramme({ brief });
     if (!synthesized.ok) {
       return { intent, message: synthesized.message };
@@ -444,11 +716,50 @@ export class ArchitecturalIntelligenceService {
 
     // Rule 10: providers enrich the artefact before it is offered, never after
     // it is approved. A programme the user approved is what the user saw.
-    const programme = this.planner.enrich(
+    const enriched = this.planner.enrich(
       PLANNING_STAGES.Programme,
       synthesized.programme,
       this.knowledge
     );
+
+    // Story 1.3.7. A stage the project already holds is *revised*, never
+    // replaced — same id, next revision, provenance pointing at the Brief now in
+    // force. Minting a second programme instead would split the lineage, and a
+    // project holding two programmes cannot say which one it meant.
+    const previous = this.approvedProgramme();
+    if (previous === undefined) {
+      return {
+        intent,
+        message: describeProgramme(enriched),
+        proposal: toProgrammeProposal(enriched),
+        programme: enriched
+      };
+    }
+
+    // Bug 005. Ids are reconciled *before* the patch is built, so a regeneration
+    // that changed nothing produces a patch equal to what the project already
+    // holds — and so that a Layout built on this programme keeps pointing at
+    // spaces that still exist.
+    const stable = withPreviousSpaceIds(enriched, previous);
+    const patch = {
+      spaces: stable.spaces,
+      adjacencies: stable.adjacencies,
+      totalArea: stable.totalArea,
+      assumptions: stable.assumptions,
+      warnings: stable.warnings,
+      sourceBrief: stable.sourceBrief,
+      ...(stable.contributedBy === undefined ? {} : { contributedBy: stable.contributedBy })
+    };
+
+    if (!changesAnything(previous, patch)) {
+      const blocker = nothingToRegenerate({
+        stage: 'space programme',
+        nextStage: 'layout'
+      });
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    const programme = reviseProgramme(previous, patch);
 
     return {
       intent,
@@ -456,6 +767,117 @@ export class ArchitecturalIntelligenceService {
       proposal: toProgrammeProposal(programme),
       programme
     };
+  }
+
+  /**
+   * The next revision of the approved Brief, from what the user just said
+   * (Sprint 1.3, Story 1.3.5).
+   *
+   * Public because the tool path and a menu command would both want it, and for
+   * the same reason `generateProgramme` is: a revision is a stage of the design,
+   * not a conversational accident.
+   *
+   * The result is a `Proposal` like every other artefact's. Approving it
+   * supersedes revision n and leaves every stage below the Brief stale — which
+   * is the point, and which the workflow state reports without anything here
+   * having to announce it.
+   */
+  reviseApprovedBrief(
+    utterance: string,
+    intent: ArchitecturalIntent = recognizeIntent(utterance)
+  ): ArchitecturalResponse {
+    const approved = this.approvedBrief();
+    if (approved === undefined) {
+      return { intent, message: NO_BRIEF_TO_REVISE };
+    }
+
+    const revised = reviseBriefFrom(approved, utterance);
+    if (revised === undefined) {
+      // The utterance restated what the Brief already says. Superseding revision
+      // n with an identical revision n+1 would be supersession theatre, and the
+      // vocabulary already has the word for it.
+      const blocker = nothingToRevise();
+      return { intent, message: blocker.message, blocker };
+    }
+
+    return {
+      intent,
+      message: describeBrief(revised),
+      proposal: toBriefProposal(revised),
+      brief: revised
+    };
+  }
+
+  /**
+   * Whether a stage can be generated now — its input is approved *and* current.
+   *
+   * The classifier's stage gates, read off the projection instead of recomputed
+   * (Rule 8). Note the off-by-one that is not one: the gate named
+   * `hasApprovedBrief` asks whether the **programme** stage is eligible, because
+   * that is exactly the question "is there a current brief to build one from".
+   */
+  private isEligible(workflow: ArchitecturalWorkflowState, stage: PlanningStage): boolean {
+    return stageState(workflow, stage)?.eligible === true;
+  }
+
+  /**
+   * Refuses an input the project has superseded (Sprint 1.3, Story 1.3.9).
+   *
+   * Every `generate*` takes its upstream artefact as an argument and, until this
+   * sprint, believed it. The lanes and the tools both read the artefact in force
+   * so they could not pass a stale one — but the methods are public, a menu
+   * command could hold one from before an approval, and the result would be a
+   * design that is out of date the moment it is approved.
+   *
+   * Sprint 1.2 deliberately did **not** add this guard, because until there was
+   * a revision path a refusal left the user with nowhere to go. Now regenerating
+   * from the revision in force is one turn away, so the refusal is actionable
+   * and the suggestion says so.
+   *
+   * Two ways an input is refused, and the second is the one a tool can reach:
+   *
+   * 1. **It is not the artefact in force.** A caller held one from before an
+   *    approval, or one from another lineage entirely.
+   * 2. **It is in force and the projection says the stage cannot proceed** —
+   *    because that artefact is itself stale. The programme tool reads the
+   *    programme in force and passes it faithfully; if a Brief revision left that
+   *    programme out of date, a layout built on it is out of date too. Without
+   *    this clause a tool could build exactly what the workflow state says is
+   *    unavailable, which is the two-derivations bug ADR-AI-0002 Rule 8 exists to
+   *    prevent, appearing between a lane and a tool instead of between two lanes.
+   *
+   * The second reason reuses the blocker the projection already computed. There
+   * is one place that decides why a stage cannot proceed, and this is not it.
+   *
+   * Silent when the project holds nothing of this kind: an artefact the project
+   * never approved is not one it superseded, and a caller composing a pipeline
+   * by hand still works exactly as it did.
+   */
+  private supersededInput(
+    kind: string,
+    artefact: { readonly id: string; readonly revision: number },
+    noun: string,
+    stage: PlanningStage
+  ): PlanBlocker | undefined {
+    const inForce = this.artefacts?.current(kind);
+    if (inForce === undefined) {
+      return undefined;
+    }
+
+    if (inForce.id !== artefact.id || inForce.revision !== artefact.revision) {
+      const message =
+        inForce.id === artefact.id
+          ? `That ${noun} is revision ${artefact.revision}, and the project now holds revision ${inForce.revision}.`
+          : `That ${noun} is not the one this project holds.`;
+
+      return {
+        reason: PLAN_BLOCKER_REASONS.Superseded,
+        message: `${message} Building on it would produce something out of date the moment it was approved.`,
+        suggestions: [`Ask again and I will use the ${noun} in force.`]
+      };
+    }
+
+    return stageState(this.workflowState(), stage)?.blockers[0];
   }
 
   /**
@@ -495,6 +917,46 @@ export class ArchitecturalIntelligenceService {
     }
 
     this.briefDrafts?.clear();
+
+    // Story 1.5.7, and the fork path only a probe found. A completed draft
+    // becomes the artefact *under the draft's own id* — which is right for a
+    // first Brief and a second lineage for every one after it. When the project
+    // holds one, the answers fold into it instead.
+    const approved = this.approvedBrief();
+    if (approved !== undefined) {
+      return { ...this.foldIntoApprovedBrief(approved, revised, intent) };
+    }
+
+    return {
+      intent,
+      message: describeBrief(revised),
+      proposal: toBriefProposal(revised),
+      brief: revised
+    };
+  }
+
+  /**
+   * A completed draft, folded into the Brief the project already holds
+   * (Story 1.5.7).
+   *
+   * The draft's requirements are what the user just answered, so they are
+   * exactly the fields to fold — the draft itself is discarded rather than
+   * becoming an artefact of its own.
+   */
+  private foldIntoApprovedBrief(
+    approved: ArchitecturalBrief,
+    draft: ArchitecturalBrief,
+    intent: ArchitecturalIntent
+  ): ArchitecturalResponse {
+    const revised = reviseBriefFromFields(approved, {
+      requirements: draft.requirements,
+      spaces: draft.desiredSpaces
+    });
+
+    if (revised === undefined) {
+      return { intent, message: BRIEF_ALREADY_SAYS_THAT, blocker: nothingToRevise() };
+    }
+
     return {
       intent,
       message: describeBrief(revised),
@@ -553,6 +1015,26 @@ const NO_APPROVED_PROGRAMME =
 /** What a geometry request gets when no Layout has been approved (Sprint 28.1a). */
 const NO_APPROVED_LAYOUT =
   'There is no approved layout yet, so there is nothing to realise. Approve a layout first and I will draw the rooms.';
+
+/** What every path answers when a re-description would change nothing (Sprint 1.5). */
+function nothingToRevise(): PlanBlocker {
+  return {
+    reason: PLAN_BLOCKER_REASONS.NothingToDo,
+    message: BRIEF_ALREADY_SAYS_THAT,
+    suggestions: ['Name what should change — the number of bedrooms, storeys or bathrooms.']
+  };
+}
+
+/** The sentence the tool and both conversational paths share (Story 1.5.8). */
+const BRIEF_ALREADY_SAYS_THAT = 'The brief already says that, so there is nothing to revise.';
+
+/** What a revision request gets when the project holds no Brief (Sprint 1.3). */
+const NO_BRIEF_TO_REVISE =
+  'There is no approved brief to revise yet. Tell me what you want to build and I will start one.';
+
+/** What a construction request gets when no Geometry Graph has been approved (Sprint 1.2). */
+const NO_APPROVED_GEOMETRY =
+  'There is no approved geometry yet, so there is nothing to give thickness to. Approve the geometry first and I will specify the walls.';
 
 /** Whether a stored artefact really carries a document-shaped value. */
 function isArtefactValue(

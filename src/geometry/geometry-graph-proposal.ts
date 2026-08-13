@@ -2,6 +2,10 @@
  * A Geometry Graph, offered for approval (Sprint 28.1a, Epic 7 —
  * ADR-0027.1 Rule 7).
  *
+ * Renamed from `toGeometryProposal` in Sprint 1.1: "Geometry Proposal" now names
+ * nothing, and every factory is named after the artefact it wraps rather than
+ * after the envelope. The Geometry *Specification* one stage down has its own.
+ *
  * The fourth twin of `brief/brief-proposal.ts`, and by now the pattern is the
  * whole return on Sprint 27.8's `Proposal` generalisation: a fourth planning
  * artefact reached the approval gate with no second approval surface, no second
@@ -26,13 +30,13 @@ import { describeEvaluation, evaluateGeometryGraph } from './geometry-evaluation
 const EXPECTED_OUTCOME =
   'The geometry is recorded with the project. Still no walls: the next step gives these edges thickness and builds them.';
 
-export interface ToGeometryProposalOptions {
+export interface ToGeometryGraphProposalOptions {
   readonly expected: readonly { readonly spaceId: string; readonly instances: number }[];
 }
 
-export function toGeometryProposal(
+export function toGeometryGraphProposal(
   graph: GeometryGraph,
-  options: ToGeometryProposalOptions
+  options: ToGeometryGraphProposalOptions
 ): Proposal {
   if (!isGeometryGraphComplete(graph)) {
     throw new Error('An empty geometry graph cannot be proposed for approval.');

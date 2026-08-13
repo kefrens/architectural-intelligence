@@ -49,11 +49,12 @@ import {
   createArchitecturalProviderAdapter
 } from './provider/architectural-provider-adapter.js';
 import {
-  captureBriefToolDefinition,
   createArchitecturalToolDefinitions,
+  createCaptureBriefToolDefinition,
   createGeometryToolDefinition,
   createLayoutToolDefinition,
-  createProgrammeToolDefinition
+  createProgrammeToolDefinition,
+  createSpecificationToolDefinition
 } from './tools/index.js';
 
 /**
@@ -194,14 +195,18 @@ function contributionFor(
       //
       // The one tool here that takes fields, because a Brief is built from what
       // the user said and the model is what read it.
-      captureBriefToolDefinition,
+      createCaptureBriefToolDefinition(intelligence),
       ...createArchitecturalToolDefinitions(intelligence),
       // Sprints 27.9, 28.0 and 28.1a. Each bound to the service because the
       // approved artefact it reads lives behind that service's artefact reader,
       // never in the model's arguments.
       createProgrammeToolDefinition(intelligence),
       createLayoutToolDefinition(intelligence),
-      createGeometryToolDefinition(intelligence)
+      createGeometryToolDefinition(intelligence),
+      // Sprint 1.1, appended last. `listFunctionSchemas` hands this order to a
+      // model, so a reordering is a behaviour change wearing a refactor's
+      // clothes — new tools go on the end, never in the middle.
+      createSpecificationToolDefinition(intelligence)
     ],
     contextProvider: createArchitecturalContextProvider(
       intelligence,

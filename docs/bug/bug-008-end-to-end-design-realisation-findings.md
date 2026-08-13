@@ -1,8 +1,56 @@
 # BUG-008 — Findings and fix plan
 
-> **Status:** Investigated, not yet fixed
+> **Status:** Investigated. **Phases 1 and 2 landed** in `archisimple`; Phase 3 (this repository) is next
 > **Investigated at:** `architectural-intelligence` `53388df` (v0.2.0), `archisimple` `2d9fc6a`
 > **Answers:** [BUG-008](bug-008-end-to-end-design-realisation.md) §5 (hypotheses) and §6 (method)
+
+---
+
+## 0. Status
+
+**Phase 1 is implemented, in `archisimple` only** — Sprint 036.2b, "truthful
+realisation state" (`archisimple/docs/sprints/sprint-036.2b-truthful-realisation-state.md`).
+
+A host-supplied `realisation` Context Provider reports, from the project's own
+`RealisationRecordRegistry`, whether the approved Geometry Specification has
+actually been built: `no-specification` | `not-realised` | `realised` | `refused`
+| `failed`, with the realisation guard's own verdict beside it. A system-prompt
+rule tells the model to read that state rather than infer it. The assistant can
+no longer report a building that does not exist — AC-2 and AC-8 are closed.
+
+It needed **no cross-repository contract**: the fragment is assembled entirely in
+`apps/web`, out of state `apps/web` owns, so nothing in this repository changed
+and no release ordering applies. Nothing in this document's §2 evidence was
+contradicted by the implementation.
+
+**Phase 2 is implemented, also in `archisimple` only** — **ADR-0032 revision
+2.2** and Sprint 037.0, "AI-approved realisation"
+(`archisimple/docs/sprints/sprint-037.0-ai-approved-realisation.md`). §4's
+recommendation **(ii)** was approved.
+
+G-8 is closed. A `Proposal` carries a realisation **subject** —
+`{ specificationId, revision }`, an identity and never a plan — and approving it
+delegates to a host `RealisationSink` implemented with the existing
+`realiseApprovedSpecification`. Revision 2.2 makes two things normative: _there
+SHALL be exactly one realisation path_, and _the proposal SHALL NOT carry
+executable realisation machinery_. `ProposalExecutionResult` gained an optional
+`outcome: succeeded | refused | failed | not-attempted`, so a guard's refusal is
+no longer indistinguishable from a crash.
+
+The realisation **tool** is contributed by the host, for the reason §4 gave:
+everything it must know is state `apps/web` owns.
+
+**Phase 3 is this repository's, and is unstarted.** Two items, both from §5:
+
+- a realisation lane in the deterministic classifier, so "build it" stops falling
+  into Direct Execution — today the model reaches the tool because the tool is
+  offered, not because a lane routes to it;
+- the realisation fact in `deriveWorkflowState`, which needs a read port —
+  the one genuinely new cross-repository contract, and the one that deserves an
+  ADR-AI.
+
+Phase 3 consumes a released `@archisimple/ai-engine` (ADR-0030 Rule 8); in the
+linked local workspace that is a build order rather than a publish order.
 
 ---
 
@@ -39,7 +87,7 @@ In this repository:
   `planning_generateSpecification`. Nothing follows the Specification.
 - `REQUEST_LANES` ([`src/brief/request-classification.ts`](../../src/brief/request-classification.ts))
   has eight lanes. None of them is "build the approved design"; the eighth and
-  last added, `brief-revision`, goes back *up* the pipeline.
+  last added, `brief-revision`, goes back _up_ the pipeline.
 - `grep -i 'realis\|realiz\|buildplan'` over `src/` matches only geometry-graph
   and specification wording. There is no client of the realisation capability
   anywhere in the reasoning layer.
@@ -97,13 +145,13 @@ told that nothing was built. AC-2's false success is the predictable result.
 
 ### H2–H6, excluded
 
-| Hypothesis                              | Verdict                                                                                         |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| H2 wrong execution capability           | Excluded — no action is emitted at all.                                                          |
-| H3 artefact not actually approved       | Excluded — the Specification is approved and readable; `realiseApprovedDesign` finds it.         |
-| H4 reached ArchiSimple and was refused   | Excluded — the guard is never entered. No `RealisationRecord` of any outcome is written.         |
-| H5 result not observed                  | Excluded — there is no result.                                                                   |
-| H6 stale UI                             | Excluded — no mutation occurred, so there is nothing for the UI to be stale about.               |
+| Hypothesis                             | Verdict                                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| H2 wrong execution capability          | Excluded — no action is emitted at all.                                                  |
+| H3 artefact not actually approved      | Excluded — the Specification is approved and readable; `realiseApprovedDesign` finds it. |
+| H4 reached ArchiSimple and was refused | Excluded — the guard is never entered. No `RealisationRecord` of any outcome is written. |
+| H5 result not observed                 | Excluded — there is no result.                                                           |
+| H6 stale UI                            | Excluded — no mutation occurred, so there is nothing for the UI to be stale about.       |
 
 ---
 
@@ -134,7 +182,7 @@ the whole of AC-6 and §10.2.
 `ProposalOperation` gains an operation variant; `AiSessionController` gains an
 `OperationDispatcher`; approval dispatches it.
 
-The tool must then *build* the operation payload at resolve time — read the
+The tool must then _build_ the operation payload at resolve time — read the
 Specification, run the guard, call `translateToBuildPlan`, and hand back
 `realiseBuildPlanOperation(plan)`. That splits `realiseApprovedSpecification`
 across resolve and approval, and puts the guard and the translator behind a second
@@ -143,7 +191,7 @@ entry point. Sprint 036.2 §2.1 forbids that of the UI in the same words BUG-008
 
 ### (ii) Recommended — a realisation subject, executed by a host port
 
-`Proposal.subject` already discriminates: approving an *artefact* proposal calls
+`Proposal.subject` already discriminates: approving an _artefact_ proposal calls
 `this.artefacts.approve(artefact)` rather than dispatching Requests. Add a third
 subject — a realisation, carrying the Specification's `{ id, revision }` — and a
 host-supplied port beside `artefacts`, which `apps/web` implements with the
@@ -173,7 +221,7 @@ realisation path.
 
 ## 5. Plan
 
-### Phase 1 — stop lying, before anything is built (`archisimple`, small)
+### Phase 1 — stop lying, before anything is built (`archisimple`, small) — **done, Sprint 036.2b**
 
 Independent of G-8, and worth landing first because it removes the dangerous
 half of the bug (AC-2, AC-8) without waiting for the mechanism.
@@ -183,13 +231,13 @@ half of the bug (AC-2, AC-8) without waiting for the mechanism.
    the project already owns. The `architecture` fragment reports state and never
    instructs, so this is a fact — `realised: false` — not a prompt rule.
 2. A prompt rule that an execution claim requires an execution result: the
-   assistant describes what it *will propose*, never what it has done.
+   assistant describes what it _will propose_, never what it has done.
 
 After Phase 1, a user who asks to build gets a truthful "I cannot build this from
 here — use Build Approved Design", which is a far better failure than a fictional
 building.
 
-### Phase 2 — G-8 (`archisimple`, ADR + sprint)
+### Phase 2 — G-8 (`archisimple`, ADR + sprint) — **done, ADR-0032 revision 2.2 + Sprint 037.0**
 
 3. ADR-0032 revision recording the chosen shape from §4.
 4. `ai-engine`: realisation subject on `Proposal`, host port beside `artefacts`,
@@ -212,8 +260,8 @@ building.
    Specification, so the deterministic classifier answers truthfully too rather
    than dropping "build it" into Direct Execution.
 8. Extend the workflow projection with the realisation fact, so
-   `ArchitecturalDesignStage` and the `architecture` fragment can say *the design
-   is approved and not yet built* and name the action that changes it. This needs
+   `ArchitecturalDesignStage` and the `architecture` fragment can say _the design
+   is approved and not yet built_ and name the action that changes it. This needs
    the `PlanningArtefactReader` port (or a sibling) to answer it — the cross-repo
    contract point, and the one thing here that deserves an ADR-AI.
 9. Truthful reporting: the execution result already flows back as the proposal's

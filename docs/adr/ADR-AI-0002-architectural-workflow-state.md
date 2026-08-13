@@ -1,10 +1,10 @@
 # ADR-AI-0002: Architectural Workflow State
 
 - **Status:** Accepted
-- **Revision:** 1.3
-- **Date:** 2026-08-10; revision 1.3 accepted 2026-08-13
+- **Revision:** 1.4
+- **Date:** 2026-08-10; revisions 1.3 and 1.4 accepted 2026-08-13
 - **Deciders:** ArchiSimple Project
-- **Relates to:** ADR-AI-0001 (the five artefacts), ArchiSimple ADR-0027.1 (planning pipeline, Rules 4, 7, 8, 12), ADR-0029 (Rules 2 and 3 — restated shapes), ADR-0030 (Rules 1, 2, 4, 8 — repository separation), ADR-0031 and ADR-0032 revision 2.2 (the host's execution lane, and the one realisation path)
+- **Relates to:** ADR-AI-0001 (the five artefacts), ArchiSimple ADR-0027.1 (planning pipeline, Rules 4, 7, 8, 12), ADR-0029 (Rules 2 and 3 — restated shapes), ADR-0030 (Rules 1, 2, 4, 8 — repository separation), ADR-0031 and ADR-0032 revision 2.2 (the host's execution lane, and the one realisation path), ADR-AI-0004 (the realisation state read port)
 - **Implemented by:** Sprint 1.2 (the projection), Sprint 1.3 (lineage and navigation), Sprint 1.6 (the realisation lane — revision 1.3)
 
 ---
@@ -17,6 +17,7 @@
 | 1.1      | 2026-08-10 | Sprint 1.3 implemented Rule 10, which is the rule this revision exists to report on. Records that the port widened with **no change in ArchiSimple**, and adds the two clauses Rule 7's enforcement turned out to need.                                                    |
 | 1.2      | 2026-08-10 | Sprint 1.4 gave the projection its **second consumer** — the context fragment a model reads. Adds Rule 13, which says what a consumer may do with it and what it may never do.                                                                                             |
 | **1.3**  | 2026-08-13 | BUG-008 Phase 3 adds the first lane whose subject is **not a planning stage**. Names realisation state as the host's, extends Rule 2 to say this layer never observes it, and extends Rule 8 to say what gates a non-stage lane. Adds no rule and changes no existing one. |
+| **1.4**  | 2026-08-13 | Points at **ADR-AI-0004**, which decides the realisation state read port — and decides that realisation state is read _beside_ this projection rather than folded into it. Adds no rule and changes none.                                                      |
 
 ---
 
@@ -278,9 +279,15 @@ which is precisely what Rule 8 exists to prevent.
 Realisation state can therefore enter the projection **only through a read port
 of its own**, beside `PlanningArtefactReader`. Rule 10's "widen without forcing a
 release" does not apply: the host would have to supply a new object to the
-contribution, so both repositories change and ADR-0030 Rule 8's release ordering
-holds. That is a decision, not a detail, and it belongs to the revision that
-makes it.
+contribution, so both repositories change. That is a decision, not a detail, and
+it belongs to the revision that makes it.
+
+**Revision 1.4: the port exists, and the projection still does not
+carry it.** ADR-AI-0004 decides the read port — and decides, deliberately, that
+realisation state is read _beside_ this projection rather than folded into it.
+The clause above stands unchanged as the reason a port was needed at all; what it
+left open, ADR-AI-0004 settles. The projection remains planning workflow state,
+and no consumer of it may report `complete` as though it meant built.
 
 ### Rule 3 --- Actions are what this layer can be asked to do
 

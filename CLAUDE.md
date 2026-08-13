@@ -125,7 +125,7 @@ goes stale the moment a later revision lands. Resist adding one.
 | Path                                    | What lives there                                                                                     |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `architectural-intelligence-service.ts` | The service. `interpret`, `generate{Programme,Layout,Geometry}`, `approved*`, provider registration. |
-| `brief/`                                | Stage 1, plus `request-classification.ts` — the nine lanes.                                          |
+| `brief/`                                | Stage 1, plus `request-classification.ts` — the ten lanes.                                           |
 | `programme/` · `layout/` · `geometry/`  | Stages 2–4. Synthesis and evaluation.                                                                |
 | `planning/`                             | `ArchitecturalPlanner`, `planning-stage.ts`, `architectural-plan.ts`.                                |
 | `planning/operations/`                  | `ArchitecturalOperationProvider` implementations.                                                    |
@@ -136,7 +136,7 @@ goes stale the moment a later revision lands. Resist adding one.
 ### Classification is deterministic
 
 [`brief/request-classification.ts`](src/brief/request-classification.ts) sorts an
-utterance into one of **nine** lanes **before any provider is consulted**. The
+utterance into one of **ten** lanes **before any provider is consulted**. The
 four stage lanes are each gated on approval state (`hasApprovedBrief`,
 `hasApprovedProgramme`, `hasApprovedLayout`, `hasApprovedGeometry`), read off the
 workflow projection, so they are unreachable for a caller that has not opted in.

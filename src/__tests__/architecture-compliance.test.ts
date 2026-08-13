@@ -318,6 +318,39 @@ describe('architectural-intelligence reasons but never executes', () => {
     );
 
     /**
+     * ADR-AI-0004 Rules 5 and 8, asserted (Sprint 1.7).
+     *
+     * The realisation state reader is consulted **once**, in the realisation
+     * branch, and nowhere else. Two consumers is how a per-turn read becomes a
+     * projection input by accident — and the projection must answer on every
+     * render, where no reader has been consulted and none can be.
+     *
+     * Behavioural tests catch a *wrong* answer. Only this catches a second
+     * caller that happens to agree today.
+     */
+    it('the realisation state reader has exactly one call site', () => {
+      const callSites = sources.flatMap((file) => {
+        const calls = code(file.source).match(/\brealisation\?\.realisation\(\)/g) ?? [];
+        return calls.map(() => file.path);
+      });
+
+      expect(callSites).toEqual(['architectural-intelligence-service.ts']);
+    });
+
+    /**
+     * Rule 5, from the other side: the *port* is held, never its answer. A field
+     * typed `RealisationState` would be a cached verdict about whether a
+     * building exists, and it would survive the build that made it wrong.
+     */
+    it('holds the reader, never the state it returns', () => {
+      for (const file of sources) {
+        expect(code(file.source), file.path).not.toMatch(
+          /(?:private|protected|public|readonly|let|var)\s+\w+\s*:\s*RealisationState\b/
+        );
+      }
+    });
+
+    /**
      * The other half of the invariant: the identity crosses, and only the
      * identity. A third field on the subject is how a plan would arrive one
      * property at a time.

@@ -107,11 +107,11 @@ a button click uses.
 
 ---
 
-# The front door: nine lanes
+# The front door: ten lanes
 
 `ArchitecturalIntelligenceService.interpret` classifies one utterance
 **deterministically, before any provider is consulted**, and routes it into one
-of nine lanes ([src/brief/request-classification.ts](../../src/brief/request-classification.ts)).
+of ten lanes ([src/brief/request-classification.ts](../../src/brief/request-classification.ts)).
 `interpret` has exactly one caller — the Architectural Assistant adapter — so
 this is the deterministic assistant's front door. A language-model provider never
 reaches it; it reaches capability through the host's Tool Broker.
@@ -164,11 +164,50 @@ specification"_ regenerated the Specification. Both now build.
 Its gate asks a third kind of question: `hasApprovedSpecification` means _there
 is a design here to build_, not _the stage below may run_, and deliberately not
 _and it is current_ — a stale design is answered with a `superseded` blocker
-naming the fix, rather than by the lane silently closing. Whether the design has
-**already been built** is not knowable in this layer at all (ADR-AI-0002
-revision 1.3, extension to Rule 2): such a proposal is refused by the host's
-guard on approval, and that refusal is authoritative in a way a guess here would
-not be.
+naming the fix, rather than by the lane silently closing.
+
+**Sprint 1.7 gave the lane the fact it was missing** (ADR-AI-0004): whether the
+design has already been built. It arrives through a host-supplied
+`RealisationStateReader` — read-only, five fields, read per turn and never
+stored, and consulted from `proposeRealisation` and nowhere else. Not from the
+`realisation` context fragment, which crosses on every turn and is the wrong
+channel for an authority: `AssembledContext` is string-keyed and
+`unknown`-valued, and a plugin-contributed provider of the same id replaces it.
+Not in the workflow projection either (Rule 8) — that is planning state and must
+answer on every render; realisation state is the host's execution state, read
+beside it and never merged.
+
+So the lane now answers in order: a stale design first, because staleness is
+_this_ layer's knowledge; then already-built, which explains instead of
+proposing; then the host guard's own refusal, reported by its code rather than
+interpreted; then a retry after a refusal or failure, which proposes **and names
+the earlier attempt**; then the ordinary case. A refusal produced here is
+**conversational** — the host's guard remains the authority on whether a build
+may happen, so every declining answer says what would change it.
+
+Nothing infers realisation from geometry. Undo empties the drawing and the design
+stays built, because a realisation is an event and not the contents of the model
+— which is exactly what stops the assistant offering to rebuild a building that
+already exists in the project's record.
+
+The **continuation lane** (Sprint 1.8, BUG-010) is what stops the user being the
+workflow's orchestrator. Every stage below the Brief is a _derivation_ — it needs
+the artefact above it approved and nothing else — so once that approval exists
+there is exactly one thing "ok" can mean. Before it, saying so meant naming the
+artefact: "generate the programme" worked, and "ok", "next", "continue" and "go
+ahead" all fell into Direct Execution.
+
+Three things keep it honest. Its pattern is **anchored to the whole utterance**,
+so "ok, now delete that wall" is a modelling command with a politeness in front
+of it and stays where it belongs. It is checked **after** every lane that names
+what it wants, because it carries no evidence of its own. And it excludes the
+**Brief**, which is written from what the user said — "ok" says nothing about a
+building.
+
+It removes the typing, not the approving: each artefact still reaches the user as
+a proposal, which is BUG-010's Shape B decision. The four named stage lanes and
+this one route through **one** generator, so "generate the layout" and "ok"
+cannot answer differently.
 
 Recognition needs three things together — a construction verb, the design _as a
 whole_ as its subject, and **no element named**. The third is what keeps Story

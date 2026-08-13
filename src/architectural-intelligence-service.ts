@@ -153,7 +153,14 @@ import {
   type PlanningArtefactReader
 } from './artefacts/planning-artefact-reader.js';
 import { toProposal } from './proposal/proposal-builder.js';
-import { describeRealisation, toRealisationProposal } from './realisation/index.js';
+import {
+  describeRealisation,
+  REALISATION_STATUSES,
+  toRealisationProposal,
+  type RealisationState,
+  type RealisationStateReader,
+  type RealisationStatus
+} from './realisation/index.js';
 import {
   answerArchitecturalQuestion,
   type ArchitecturalAnswer,
@@ -186,6 +193,15 @@ export interface ArchitecturalIntelligenceServiceOptions {
    * has to be approved first.
    */
   readonly artefacts?: PlanningArtefactReader;
+  /**
+   * Whether the approved design has actually been built (Sprint 1.7 —
+   * ADR-AI-0004).
+   *
+   * Host-supplied and read-only. Omitted is a supported configuration, not a
+   * degraded one: the realisation lane behaves exactly as it did in Sprint 1.6,
+   * proposing a build and letting the host's guard decide (Rule 6).
+   */
+  readonly realisation?: RealisationStateReader;
 }
 
 /**
@@ -227,12 +243,19 @@ export class ArchitecturalIntelligenceService {
   private readonly planner: ArchitecturalPlanner;
   private readonly briefDrafts: BriefDraftStore | undefined;
   private readonly artefacts: PlanningArtefactReader | undefined;
+  /**
+   * The port, not its answer (Sprint 1.7 — ADR-AI-0004 Rule 5). Holding a
+   * `RealisationState` here instead would be a cached verdict about whether a
+   * building exists, and it would go stale the moment one is built.
+   */
+  private readonly realisation: RealisationStateReader | undefined;
 
   constructor(options: ArchitecturalIntelligenceServiceOptions) {
     this.knowledge = options.knowledge;
     this.planner = options.planner ?? defaultPlanner();
     this.briefDrafts = options.briefDrafts;
     this.artefacts = options.artefacts;
+    this.realisation = options.realisation;
   }
 
   /**
@@ -356,7 +379,12 @@ export class ArchitecturalIntelligenceService {
       // the gate — a stale design is still the one the user meant, and the
       // branch below answers it with the reason rather than the lane closing.
       hasApprovedSpecification:
-        stageState(workflow, PLANNING_STAGES.Specification)?.approved !== undefined
+        stageState(workflow, PLANNING_STAGES.Specification)?.approved !== undefined,
+      // Sprint 1.8 (BUG-010). The fourth kind of question: is there a next step
+      // that needs nothing from the user? The Brief is excluded because it is
+      // written from what the user said, and "ok" says nothing about a building
+      // — every stage below it is a derivation.
+      canContinue: derivableNextStage(workflow) !== undefined
     });
     const intent = recognizeIntent(utterance);
 
@@ -372,37 +400,31 @@ export class ArchitecturalIntelligenceService {
       return { ...this.proposeRealisation(workflow, intent), classification };
     }
 
+    // Sprint 1.8 (BUG-010). "ok" means whatever the project is waiting to do
+    // next, and the projection is what knows — so this routes to the same
+    // generator the named lane would have reached, rather than deciding
+    // anything of its own (ADR-AI-0002 Rules 8 and 13).
+    if (classification.lane === REQUEST_LANES.Continuation) {
+      const next = derivableNextStage(workflow);
+      return next === undefined
+        ? { ...this.interpretIntent(intent), classification }
+        : { ...this.generateStage(next, intent), classification };
+    }
+
     if (classification.lane === REQUEST_LANES.SpecificationGeneration) {
-      const approvedGeometry = this.approvedGeometry();
-      return approvedGeometry === undefined
-        ? { intent, message: NO_APPROVED_GEOMETRY, classification }
-        : { ...this.generateSpecification(approvedGeometry, intent), classification };
+      return { ...this.generateStage(PLANNING_STAGES.Specification, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.GeometryGeneration) {
-      const approvedLayout = this.approvedLayout();
-      return approvedLayout === undefined
-        ? { intent, message: NO_APPROVED_LAYOUT, classification }
-        : { ...this.generateGeometry(approvedLayout, intent), classification };
+      return { ...this.generateStage(PLANNING_STAGES.Geometry, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.LayoutGeneration) {
-      // Reachable only when the reader answered, so `approvedProgramme` is
-      // present here by construction; the guard is for the type.
-      const approvedProgramme = this.approvedProgramme();
-      return approvedProgramme === undefined
-        ? { intent, message: NO_APPROVED_PROGRAMME, classification }
-        : { ...this.generateLayout(approvedProgramme, intent), classification };
+      return { ...this.generateStage(PLANNING_STAGES.Layout, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.ProgrammeGeneration) {
-      // The lane is only reachable when the reader answered, so `approvedBrief`
-      // is present here by construction; the guard is for the type, not for a
-      // case that can occur.
-      const approvedBrief = this.approvedBrief();
-      return approvedBrief === undefined
-        ? { intent, message: NO_APPROVED_BRIEF, classification }
-        : { ...this.generateProgramme(approvedBrief, intent), classification };
+      return { ...this.generateStage(PLANNING_STAGES.Programme, intent), classification };
     }
 
     if (classification.lane === REQUEST_LANES.BriefGeneration) {
@@ -632,6 +654,54 @@ export class ArchitecturalIntelligenceService {
   }
 
   /**
+   * Generates one derivable stage from the artefact above it (Sprint 1.8 —
+   * BUG-010).
+   *
+   * The four named stage lanes and the continuation lane all arrive here, which
+   * is the point: "generate the layout" and "ok" reach the same code, so they
+   * cannot answer differently. Before this sprint each lane inlined its own
+   * `approved*()` read and its own missing-input message — four copies of one
+   * shape, and a fifth caller would have made five.
+   *
+   * Each `undefined` branch is unreachable by construction: the lane that routed
+   * here was gated on the projection, which read the same artefacts. They are
+   * kept because a type needs them, and because "unreachable" is a claim about
+   * today's gates rather than tomorrow's.
+   */
+  private generateStage(stage: PlanningStage, intent: ArchitecturalIntent): ArchitecturalResponse {
+    switch (stage) {
+      case PLANNING_STAGES.Programme: {
+        const brief = this.approvedBrief();
+        return brief === undefined
+          ? { intent, message: NO_APPROVED_BRIEF }
+          : this.generateProgramme(brief, intent);
+      }
+      case PLANNING_STAGES.Layout: {
+        const programme = this.approvedProgramme();
+        return programme === undefined
+          ? { intent, message: NO_APPROVED_PROGRAMME }
+          : this.generateLayout(programme, intent);
+      }
+      case PLANNING_STAGES.Geometry: {
+        const layout = this.approvedLayout();
+        return layout === undefined
+          ? { intent, message: NO_APPROVED_LAYOUT }
+          : this.generateGeometry(layout, intent);
+      }
+      case PLANNING_STAGES.Specification: {
+        const graph = this.approvedGeometry();
+        return graph === undefined
+          ? { intent, message: NO_APPROVED_GEOMETRY }
+          : this.generateSpecification(graph, intent);
+      }
+      default:
+        // The Brief, which is not derivable: it is written from what the user
+        // said, and nothing here has anything to write it from.
+        return this.interpretIntent(intent);
+    }
+  }
+
+  /**
    * Offers the approved design to be built (Sprint 1.6 — BUG-008 Phase 3).
    *
    * The ninth lane's whole implementation, and it is short because almost
@@ -640,19 +710,27 @@ export class ArchitecturalIntelligenceService {
    * all behind ArchiSimple's one entry point (ADR-0032 revision 2.2). What is
    * left here is naming *which* design the user meant.
    *
-   * ## Three answers, and none of them is "it was built"
+   * ## The order of the answers, which is the whole of Sprint 1.7
    *
-   * A **stale** design is refused with the reason: its geometry has been revised
-   * since, so building it would build something the project has moved past. That
-   * is this layer's own knowledge — staleness is what the projection exists to
-   * compute — and not a second realisation guard, which would be the host's
-   * decision taken here.
+   * **Staleness first**, because it is the fact this layer owns: a design
+   * derived from a superseded Geometry Graph should be regenerated whatever the
+   * host thinks about building it, and the answer names the fix. Staleness is
+   * what the projection exists to compute, and asking the host about it would be
+   * a second source for one fact (ADR-AI-0004 Rule 10).
    *
-   * Whether the design has **already been built** is not among the three,
-   * because this layer cannot know it (ADR-AI-0002 revision 1.3, extension to
-   * Rule 2). A proposal for a design already built is refused by the host on
-   * approval, and its refusal is authoritative in a way a guess here would not
-   * be.
+   * **Then what the host says.** Sprint 1.6 could not ask, so it proposed and
+   * let the guard refuse at approval — truthful, and a poor conversation.
+   * Sprint 1.7 reads the host's own answer through the port and says it.
+   *
+   * A refusal produced here is **conversational** (Rule 4). The host's guard
+   * remains the authority on whether a build may happen; this explains, and
+   * never enforces. That is why every declining branch says what would change
+   * the answer rather than "you cannot".
+   *
+   * Nothing here infers realisation from anything but the port — not from the
+   * model, not from an artefact, not from the conversation, and not from the
+   * drawing being empty (Rule 2). A realisation is an **event**: undoing the
+   * geometry does not un-happen it.
    */
   private proposeRealisation(
     workflow: ArchitecturalWorkflowState,
@@ -672,11 +750,47 @@ export class ArchitecturalIntelligenceService {
     }
 
     const subject = { specificationId: approved.id, revision: approved.revision };
-    return {
+    const propose = (): ArchitecturalResponse => ({
       intent,
       message: describeRealisation(subject),
       proposal: toRealisationProposal(subject)
-    };
+    });
+
+    // Read once, per turn, never stored (Rule 5). No reader is a supported
+    // configuration and Sprint 1.6's answer is the right one for it (Rule 6).
+    const realisation = this.realisation?.realisation();
+    if (realisation === undefined || !describesTheSameDesign(realisation, subject)) {
+      // A state about another design — a misconfigured host, most plausibly two
+      // record registries — is not evidence about this one, and asserting from
+      // it would be worse than not asking.
+      return propose();
+    }
+
+    if (realisation.status === REALISATION_STATUSES.Realised) {
+      const blocker = alreadyBuilt(subject.revision);
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    if (!realisation.guardAllowsBuild) {
+      const blocker = hostWillNotBuild(realisation.guardBlockerCode);
+      return { intent, message: describeBlocker(blocker), blocker };
+    }
+
+    // `refused` and `failed` both retry — the host's guard says so, and it is
+    // the authority. What changes is that the user is told there was an earlier
+    // attempt before they approve another one.
+    if (
+      realisation.status === REALISATION_STATUSES.Refused ||
+      realisation.status === REALISATION_STATUSES.Failed
+    ) {
+      const proposal = propose();
+      return {
+        ...proposal,
+        message: `${previousAttempt(realisation.status)}\n\n${proposal.message}`
+      };
+    }
+
+    return propose();
   }
 
   /**
@@ -1063,6 +1177,23 @@ export class ArchitecturalIntelligenceService {
   }
 }
 
+/**
+ * The stage a continuation would generate, or `undefined` (Sprint 1.8, BUG-010).
+ *
+ * The projection's own answer, read rather than re-derived: the stage that needs
+ * attention, if it can be generated now and is not the Brief. Excluding the
+ * Brief is the whole of "no additional information is required" — every stage
+ * below it is a derivation of the artefact above, and the Brief is the one that
+ * needs the user.
+ */
+function derivableNextStage(workflow: ArchitecturalWorkflowState): PlanningStage | undefined {
+  const stage = workflow.currentStage;
+  if (stage === undefined || stage === PLANNING_STAGES.Brief) {
+    return undefined;
+  }
+  return stageState(workflow, stage)?.eligible === true ? stage : undefined;
+}
+
 /** What a programme request gets when no Brief has been approved (Sprint 27.9). */
 const NO_APPROVED_BRIEF =
   'There is no approved brief yet, so there is nothing to write a programme from. Tell me what you want to build and I will start one.';
@@ -1109,6 +1240,70 @@ function staleDesignToBuild(revision: number): PlanBlocker {
     message: `Revision ${revision} of the specification is out of date — the design it was derived from has been revised since. Building it would build something the project has already moved past.`,
     suggestions: ['Regenerate the specification, then ask me to build it.']
   };
+}
+
+/**
+ * Whether the host answered about the design under discussion (Sprint 1.7).
+ *
+ * The host resolves realisation state against the Specification in force, and
+ * this layer knows independently which that is. They agree in every correct
+ * configuration; a disagreement means something is misconfigured — two record
+ * registries is the plausible one — and the safe reading is that the state is
+ * about something else (ADR-AI-0004 Rule 9).
+ */
+function describesTheSameDesign(
+  state: RealisationState,
+  subject: { readonly specificationId: string; readonly revision: number }
+): boolean {
+  return (
+    state.specificationId === subject.specificationId &&
+    state.specificationRevision === subject.revision
+  );
+}
+
+/**
+ * What a build request gets when the design is already built (Sprint 1.7).
+ *
+ * `NothingToDo` — understood, possible, and there is nothing to do — which is
+ * the same reason the host's own guard gives it. The suggestion matters as much
+ * as the message: this refusal is conversational (ADR-AI-0004 Rule 4), so it
+ * says what would change the answer rather than closing the subject.
+ */
+function alreadyBuilt(revision: number): PlanBlocker {
+  return {
+    reason: PLAN_BLOCKER_REASONS.NothingToDo,
+    message: `Revision ${revision} of the design has already been built, so there is nothing to build again. Undoing the drawing does not undo that — a realisation is something that happened, not the current contents of the model.`,
+    suggestions: [
+      'Change the design and I will produce a new revision, which can be built in its own right.'
+    ]
+  };
+}
+
+/**
+ * What a build request gets when the host's guard refuses for its own reason
+ * (Sprint 1.7).
+ *
+ * The code is the host's, and it is reported rather than interpreted: this
+ * layer holds no table of what each one means, because a table here is a second
+ * guard growing one row at a time. Naming the code is what lets a user say it
+ * back to somebody who can look it up.
+ */
+function hostWillNotBuild(code: string | null): PlanBlocker {
+  return {
+    reason: PLAN_BLOCKER_REASONS.Unsupported,
+    message:
+      code === null
+        ? 'The application will not build this design as it stands.'
+        : `The application will not build this design as it stands (${code}).`,
+    suggestions: ['Revise the design and I will offer the new revision for building.']
+  };
+}
+
+/** The sentence that precedes a retry, so an earlier attempt is not silent (Sprint 1.7). */
+function previousAttempt(status: RealisationStatus): string {
+  return status === REALISATION_STATUSES.Failed
+    ? 'An earlier attempt to build this design ran and was rolled back, so the drawing is unchanged.'
+    : 'An earlier attempt to build this design was refused before anything was changed.';
 }
 
 /** What a construction request gets when no Geometry Graph has been approved (Sprint 1.2). */

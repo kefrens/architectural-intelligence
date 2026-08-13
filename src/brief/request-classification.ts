@@ -117,7 +117,22 @@ export const REQUEST_LANES = {
    * like `hasBriefToRevise` and unlike the four stage gates — asks whether there
    * is something *here*, not whether a stage below may run.
    */
-  Realisation: 'realisation'
+  Realisation: 'realisation',
+  /**
+   * The project has a stage ready to generate and the user has said, in effect,
+   * "carry on" (Sprint 1.8 — BUG-010).
+   *
+   * The tenth lane, and the one that stops the user being the workflow's
+   * orchestrator. Every stage below the Brief is a **derivation**: it needs the
+   * artefact above it approved and nothing else from the user, so once that
+   * approval exists there is exactly one thing "ok" can mean.
+   *
+   * Guarded by {@link ClassifyRequestOptions.canContinue}, which is the
+   * projection's own answer — the stage that needs attention, and whether it can
+   * be generated now. Deliberately **not** the Brief: that one is written from
+   * what the user said, and "ok" says nothing about a building.
+   */
+  Continuation: 'continuation'
 } as const;
 
 export type RequestLane = (typeof REQUEST_LANES)[keyof typeof REQUEST_LANES];
@@ -209,6 +224,16 @@ export interface ClassifyRequestOptions {
    * projection this gate came from (ADR-AI-0002 Rules 8 and 13).
    */
   readonly hasApprovedSpecification?: boolean;
+  /**
+   * Whether a **derivable** stage is ready to be generated (Sprint 1.8).
+   *
+   * The fourth kind of question in this options object, and the one the
+   * continuation lane needs: not "is this stage's input approved" but "is there
+   * a next step that needs nothing from the user". The service answers it from
+   * the same projection the four stage gates come from, and answers `false` for
+   * the Brief — see {@link REQUEST_LANES.Continuation}.
+   */
+  readonly canContinue?: boolean;
 }
 
 /**
@@ -304,6 +329,20 @@ const REVISION_CUES =
  * one realisation phrase that uses it — "make it real" — is matched whole by
  * {@link REALISATION_PHRASES} instead of widening the verb set for one idiom.
  */
+/**
+ * "Carry on" — the whole utterance, and nothing else (Sprint 1.8, BUG-010).
+ *
+ * **Anchored on purpose.** "ok" is a continuation; "ok, now delete that wall" is
+ * a modelling command with a politeness in front of it, and a pattern that
+ * matched anywhere in the sentence would hijack the second. The same discipline
+ * the specification lane applies by matching only plural `walls`.
+ *
+ * A user who names the stage they want — "generate the programme" — reaches that
+ * stage's own lane, which is checked first and is more specific than this.
+ */
+const CONTINUATION_PHRASES =
+  /^\s*(?:ok(?:ay)?|yes|yep|yeah|sure|fine|good|great|perfect|nice|next|next\s+step|continue|please\s+continue|carry\s+on|go\s+on|go\s+ahead|proceed|keep\s+going|sounds\s+good|looks\s+good|thanks?|thank\s+you)[\s.,!]*(?:please)?[\s.,!]*$/i;
+
 const REALISATION_VERBS = /\b(build|rebuild|realise|realize|construct|erect|create)\b/i;
 
 /** Whole phrases a verb set cannot express without becoming dangerous. */
@@ -450,6 +489,19 @@ export function classifyRequest(
     // wall". The user is changing their mind about something that is not in the
     // Brief, and the direct lane is where that has always gone.
     return direct('This asks for a change, but names nothing the brief states.');
+  }
+
+  // The continuation lane (Sprint 1.8), checked after every lane that names what
+  // it wants and before the dwelling test. "ok" carries no evidence of its own —
+  // it means whatever the project is waiting to do next — so anything more
+  // specific has already had its chance by the time this runs.
+  if (options.canContinue === true && CONTINUATION_PHRASES.test(trimmed)) {
+    return {
+      lane: REQUEST_LANES.Continuation,
+      reason: 'The next stage needs nothing further, so this carries on with it.',
+      signals: ['next stage ready'],
+      missing: []
+    };
   }
 
   const signals: string[] = [];

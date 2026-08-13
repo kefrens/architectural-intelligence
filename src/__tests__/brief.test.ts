@@ -328,6 +328,93 @@ describe('backward compatibility', () => {
 
 // --- Rule 6 — host-side assembly ---------------------------------------------
 
+/**
+ * BUG-009 — the storey question nobody answers.
+ *
+ * A user asked for a 100 m² apartment, gave bedrooms and bathrooms, and
+ * `planning_captureBrief` refused every call for want of a storey count. No
+ * artefact was ever produced, no card ever appeared, and the model narrated four
+ * downstream stages that did not exist. Nobody says "one storey" about an
+ * apartment: it is not information a user withholds, it is information they do
+ * not know is wanted.
+ */
+describe('a dwelling that means one storey answers the storey question', () => {
+  const IMPLIES_ONE = ['apartment', 'flat', 'studio', 'bungalow'];
+  const AMBIGUOUS = ['house', 'villa', 'cottage'];
+
+  it.each(IMPLIES_ONE)('a %s needs no storey count', (dwelling) => {
+    const brief = assembleBriefFromFields({
+      utterance: `Build me a 100m² ${dwelling}`,
+      requirements: [
+        { topic: BRIEF_TOPICS.Bedrooms, value: 2 },
+        { topic: BRIEF_TOPICS.Bathrooms, value: 2 }
+      ],
+      userMessage: `Build me a 100m² ${dwelling}`
+    });
+
+    expect(brief.openQuestions).toEqual([]);
+    expect(isBriefComplete(brief)).toBe(true);
+    expect(briefRequirement(brief, BRIEF_TOPICS.Storeys)?.value).toBe(1);
+  });
+
+  /** Assumed, never stated — the user said "apartment", not "one storey". */
+  it('records it as an assumption the user can correct', () => {
+    const brief = assembleBriefFromFields({
+      utterance: 'Build me a 100m² apartment',
+      requirements: [
+        { topic: BRIEF_TOPICS.Bedrooms, value: 2 },
+        { topic: BRIEF_TOPICS.Bathrooms, value: 2 }
+      ],
+      userMessage: 'Build me a 100m² apartment'
+    });
+
+    expect(briefRequirement(brief, BRIEF_TOPICS.Storeys)?.source).toBe(
+      BRIEF_REQUIREMENT_SOURCES.Assumed
+    );
+    expect(brief.assumptions.join(' ')).toMatch(/one storey/i);
+  });
+
+  it.each(AMBIGUOUS)('still asks a %s how many storeys it has', (dwelling) => {
+    const brief = assembleBriefFromFields({
+      utterance: `Build me a 100m² ${dwelling}`,
+      requirements: [
+        { topic: BRIEF_TOPICS.Bedrooms, value: 2 },
+        { topic: BRIEF_TOPICS.Bathrooms, value: 2 }
+      ],
+      userMessage: `Build me a 100m² ${dwelling}`
+    });
+
+    expect(brief.openQuestions).toEqual([BRIEF_TOPICS.Storeys]);
+  });
+
+  /** A stated count always wins: the word carries a number, it does not impose one. */
+  it('never overrides a storey count the user gave', () => {
+    const brief = assembleBriefFromFields({
+      utterance: 'Build me a two-storey apartment',
+      requirements: [
+        { topic: BRIEF_TOPICS.Bedrooms, value: 2 },
+        { topic: BRIEF_TOPICS.Bathrooms, value: 2 }
+      ],
+      userMessage: 'Build me a two-storey apartment'
+    });
+
+    expect(briefRequirement(brief, BRIEF_TOPICS.Storeys)?.value).toBe(2);
+    expect(briefRequirement(brief, BRIEF_TOPICS.Storeys)?.source).toBe(
+      BRIEF_REQUIREMENT_SOURCES.Stated
+    );
+  });
+
+  /** The classifier agrees with the assembler, or the lane and the tool diverge. */
+  it('classifies as a complete design request rather than a question', () => {
+    expect(classifyRequest('Design a 100m2 apartment with 2 bedrooms and 2 bathrooms').lane).toBe(
+      REQUEST_LANES.BriefGeneration
+    );
+    expect(classifyRequest('Design a 100m2 house with 2 bedrooms and 2 bathrooms').lane).toBe(
+      REQUEST_LANES.ClarificationRequired
+    );
+  });
+});
+
 describe('a brief assembled from model-supplied fields (ADR-0027.1 Rule 6)', () => {
   it('applies the same defaults and assumptions the offline path applies', () => {
     const brief = assembleBriefFromFields({

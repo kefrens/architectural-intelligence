@@ -148,20 +148,56 @@ describe('a count whose value means nothing (Bug 006)', () => {
     });
   }
 
+  /**
+   * **Narrowed by BUG-009, and the rule underneath is unchanged.**
+   *
+   * Bug 006's rule is that a *meaningless value is not an answer*: `storeys: 0`
+   * is dropped rather than corrected, so the topic stays unanswered. That still
+   * holds — see the apartment case below, which shows the zero being discarded.
+   *
+   * What changed is where the answer may then come from. This request is for an
+   * **apartment**, and since BUG-009 the word itself answers the storey question
+   * (as an assumption the user can correct), so asking it would be asking
+   * something the user already said. The assertion therefore moves to a dwelling
+   * that genuinely leaves the question open, which is what it was always about:
+   * the model's zero, not the building type.
+   */
+  const HOUSE = 'Build me a 100m2 house with 2 bedrooms, 1 bathrooms, and a small office.';
+
+  function resolveHouse(fields: Readonly<Record<string, unknown>>) {
+    return createCaptureBriefToolDefinition(service()).resolve(fields, {
+      conversation: { lastUserMessage: HOUSE }
+    });
+  }
+
   it('does not accept zero storeys as an answer', () => {
     // The reported Brief said "0 storeys" and was offered for approval: the
     // mandatory-topic check asked whether `storeys` was present, not whether its
     // value meant anything. `synthesizeProgramme` then coerced it back to 1, so
     // nothing downstream ever noticed.
-    const resolved = resolve({ ...FIELDS, storeys: 0 });
+    const resolved = resolveHouse({ ...FIELDS, storeys: 0 });
 
     expect(resolved?.kind).toBe('blocked');
   });
 
   it('asks the storey question rather than guessing that they meant one', () => {
-    const resolved = resolve({ ...FIELDS, storeys: 0 });
+    const resolved = resolveHouse({ ...FIELDS, storeys: 0 });
 
     expect(resolved?.kind === 'blocked' && resolved.message).toContain('How many storeys');
+  });
+
+  /**
+   * The two rules meeting, on the request that produced both bugs: the model's
+   * `0` is still discarded, and the answer comes from the user's own word.
+   * "0 storeys" must never reach a Brief; "1 storey (assumed)" is correct.
+   */
+  it('discards a zero and takes the storey count from the dwelling instead', () => {
+    const resolved = resolve({ ...FIELDS, storeys: 0 });
+
+    expect(resolved?.kind).toBe('proposal');
+    if (resolved?.kind !== 'proposal') return;
+    expect(resolved.proposal.explanation).not.toMatch(/0 storeys/i);
+    expect(resolved.proposal.assumptions.join(' ')).toMatch(/one storey/i);
   });
 
   it('accepts a single storey, which is the smallest building there is', () => {

@@ -45,12 +45,7 @@ import {
   readSpaceRelationships
 } from './brief-topics.js';
 import { MANDATORY_BRIEF_TOPICS, type RequestClassification } from './request-classification.js';
-import {
-  namesTopicSpace,
-  TOPIC_SPACES,
-  topicForSpaceName,
-  topicSpaceFor
-} from './topic-spaces.js';
+import { namesTopicSpace, TOPIC_SPACES, topicForSpaceName, topicSpaceFor } from './topic-spaces.js';
 
 /**
  * Topics the platform fills in rather than asks about.
@@ -149,17 +144,26 @@ interface SuppliedRequirement {
  */
 function withBackstopTopics(
   supplied: readonly SuppliedRequirement[],
-  texts: readonly (string | undefined)[]
+  texts: readonly BackstopText[]
 ): readonly SuppliedRequirement[] {
   const stated = new Set(supplied.map((requirement) => requirement.topic));
   const filled: SuppliedRequirement[] = [];
 
-  for (const text of texts) {
+  for (const { text, authoredByUser } of texts) {
     if (text === undefined || text.trim().length === 0) {
       continue;
     }
     for (const requirement of readBriefTopics(text)) {
       if (!BACKSTOP_TOPICS.includes(requirement.topic) || stated.has(requirement.topic)) {
+        continue;
+      }
+      // BUG-009. `readBriefTopics` emits one *assumed* requirement — the storey
+      // count a dwelling type implies — and it may only come from the user's own
+      // words. Recovering a number the user stated from the model's paraphrase
+      // is Bug 005's backstop working as intended; inferring the shape of the
+      // building from the model calling it an apartment is the model deciding
+      // what was asked for, which ADR-0027.1 Rule 6 does not allow.
+      if (!authoredByUser && requirement.source === BRIEF_REQUIREMENT_SOURCES.Assumed) {
         continue;
       }
       stated.add(requirement.topic);
@@ -204,13 +208,26 @@ function backstopTexts(fields: {
   readonly userMessages?: readonly string[];
   readonly utterance?: string;
   readonly objectives?: readonly string[];
-}): readonly (string | undefined)[] {
+}): readonly BackstopText[] {
   return [
-    fields.userMessage,
-    ...(fields.userMessages ?? []),
-    fields.utterance,
-    ...(fields.objectives ?? [])
+    { text: fields.userMessage, authoredByUser: true },
+    ...(fields.userMessages ?? []).map((text) => ({ text, authoredByUser: true })),
+    // `utterance` is **not** the user's words on the tool path: the Brief quotes
+    // the model's objective back when it has one (`brief-tools.ts` —
+    // `objectives[0] ?? userMessage`), because a Brief that quotes "yes please"
+    // quotes nothing. The user's own turns arrive above, named as such.
+    { text: fields.utterance, authoredByUser: false },
+    // The model's own words. Admissible for recovering a number the user gave —
+    // that is Bug 005's whole point — and *not* for creating an assumption; see
+    // `withBackstopTopics`.
+    ...(fields.objectives ?? []).map((text) => ({ text, authoredByUser: false }))
   ];
+}
+
+/** One text the backstop may read, and whether the user wrote it. */
+interface BackstopText {
+  readonly text: string | undefined;
+  readonly authoredByUser: boolean;
 }
 
 /**
@@ -351,6 +368,29 @@ export interface AssembleBriefOptions {
  * outstanding produces {@link startBriefDraft} instead, because a Brief with
  * open questions must never be offered for approval.
  */
+/**
+ * The sentence a user reads when the dwelling type answered the storey question
+ * (BUG-009 §7.1 A).
+ *
+ * `readBriefTopics` records "1 storey" as an **assumption** when the request
+ * names an apartment, a flat, a studio or a bungalow — but a requirement carrying
+ * `source: 'assumed'` is not, on its own, something the reviewer sees. This is
+ * what puts it in the list they read before approving, beside "no garage, since
+ * none was mentioned", so the one inference the platform makes about the shape of
+ * the building is as correctable as every other.
+ *
+ * Storeys is not in `DEFAULTED_TOPICS` — it is mandatory — so there is nothing
+ * here to double-count.
+ */
+function assumedStoreyNotes(requirements: readonly BriefRequirement[]): readonly string[] {
+  const storeys = requirements.find((requirement) => requirement.topic === BRIEF_TOPICS.Storeys);
+  return storeys !== undefined && storeys.source === BRIEF_REQUIREMENT_SOURCES.Assumed
+    ? [
+        'One storey, since the dwelling named occupies a single level. Say otherwise and I will revise it.'
+      ]
+    : [];
+}
+
 export function assembleBrief(options: AssembleBriefOptions): ArchitecturalBrief {
   const stated = readBriefTopics(options.utterance);
   // Spaces before defaults, then again after: a space the sentence named may
@@ -367,7 +407,7 @@ export function assembleBrief(options: AssembleBriefOptions): ArchitecturalBrief
     desiredSpaces: desiredSpacesFrom(options.utterance, requirements),
     relationships: readSpaceRelationships(options.utterance),
     requirements,
-    assumptions,
+    assumptions: [...assumptions, ...assumedStoreyNotes(requirements)],
     openQuestions: [],
     ...(options.now === undefined ? {} : { now: options.now })
   });
@@ -525,17 +565,14 @@ export function reviseBriefFromFields(
   // an otherwise-unchanged re-capture look like a change, and that is correct
   // rather than the supersession theatre Story 1.5.3 forbids: a Brief that stops
   // contradicting itself has genuinely changed.
-  requirements = withSpaceStatedTopics(requirements, [
-    ...approved.desiredSpaces,
-    ...addedSpaces
-  ]);
+  requirements = withSpaceStatedTopics(requirements, [...approved.desiredSpaces, ...addedSpaces]);
 
   // A relationship the Brief did not already hold is the user telling us
   // something new, exactly as a changed requirement is (Bug 004).
   const relationships = mergedRelationships(
     approved.relationships,
     fields.relationships ?? [],
-    backstopTexts(fields)
+    backstopTexts(fields).map((candidate) => candidate.text)
   );
 
   if (
@@ -777,9 +814,16 @@ export function assembleBriefFromFields(fields: {
         ? fields.objectives
         : [objectiveFrom(fields.utterance)],
     desiredSpaces: withCountedSpaces(fields.spaces ?? [], finished?.requirements ?? requirements),
-    relationships: mergedRelationships([], fields.relationships ?? [], backstopTexts(fields)),
+    relationships: mergedRelationships(
+      [],
+      fields.relationships ?? [],
+      backstopTexts(fields).map((candidate) => candidate.text)
+    ),
     requirements: finished?.requirements ?? requirements,
-    assumptions: finished?.assumptions ?? [],
+    assumptions: [
+      ...(finished?.assumptions ?? []),
+      ...assumedStoreyNotes(finished?.requirements ?? requirements)
+    ],
     openQuestions,
     ...(fields.now === undefined ? {} : { now: fields.now })
   });

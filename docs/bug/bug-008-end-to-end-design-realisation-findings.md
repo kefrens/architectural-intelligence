@@ -1,6 +1,6 @@
 # BUG-008 — Findings and fix plan
 
-> **Status:** Investigated. **Phases 1 and 2 landed** in `archisimple`; **Phase 3 part one landed here** (Sprint 1.6). One item remains — Sprint 1.7
+> **Status:** **Closed.** All three phases landed; the end-to-end scenario passes in both repositories
 > **Investigated at:** `architectural-intelligence` `53388df` (v0.2.0), `archisimple` `2d9fc6a`
 > **Answers:** [BUG-008](bug-008-end-to-end-design-realisation.md) §5 (hypotheses) and §6 (method)
 
@@ -40,31 +40,57 @@ no longer indistinguishable from a crash.
 The realisation **tool** is contributed by the host, for the reason §4 gave:
 everything it must know is state `apps/web` owns.
 
-**Phase 3, part one, is implemented here** — Sprint 1.6, "realisation intent
-lane" (`docs/sprints/sprint-001.6-realisation-intent-lane.md`), with
-**ADR-AI-0002 revision 1.3**.
+**Phase 3 is implemented here**, in two sprints.
 
-"Build it" after an approved Geometry Specification is now a lane of its own —
-the ninth, and the first whose subject is not a planning stage. It produces a
-`Proposal` carrying `{ specificationId, revision }` and nothing executable; the
-host builds it through the one entry point. The lane is checked **before every
-stage lane**, because the review measured what the eight existing ones did with
-these utterances first: _"realise the design"_ regenerated the Geometry Graph,
-_"create the building from this specification"_ regenerated the Specification,
-and _"build the apartment"_ started a briefing interview — every stage stays
-eligible once approved, so in exactly the project where a user asks to build, the
-lanes that redesign are still open.
+**Sprint 1.6** made realisation a lane — the ninth, and the first whose subject
+is not a planning stage. "Build it" after an approved Geometry Specification
+produces a `Proposal` carrying `{ specificationId, revision }` and nothing
+executable. The lane is checked **before every stage lane**, because the review
+measured what the eight existing ones did with these utterances first: _"realise
+the design"_ regenerated the Geometry Graph, _"create the building from this
+specification"_ regenerated the Specification, and _"build the apartment"_
+started a briefing interview.
 
-**What remains is one item, and it is a decision: Sprint 1.7.** This layer still
-cannot see whether the design has already been built, so a repeat request
-produces a proposal the host's guard refuses on approval rather than a clean
-"already built" answer. ADR-AI-0002 revision 1.3 records why closing that needs a
-**read port** rather than the `realisation` context fragment: the fragment exists
-only during a message turn, and the projection must answer on every render.
+**Sprint 1.7**, with **ADR-AI-0004**, gave the lane the fact it was missing:
+whether the design has already been built, through a host-supplied read port —
+read-only, five fields, per turn, never stored, consulted from one call site.
+Deliberately not the `realisation` context fragment (string-keyed,
+`unknown`-valued, plugin-shadowable) and deliberately not part of the workflow
+projection (that is planning state; this is the host's execution state).
 
-Phase 3 consumes a released `@archisimple/ai-engine` (ADR-0030 Rule 8); in the
-linked local workspace that is a build order rather than a publish order, which
-is how Sprint 1.6 shipped without one.
+## The trace, closed
+
+The one this document opened with, run end to end in `apps/web` against the real
+pipeline (`bug008Realisation.test.ts`):
+
+```text
+User: "build it"
+  → AI planning state        ✓ Specification approved, and known not to be built
+  → emitted action           ✓ a realisation Proposal { specificationId, revision }
+  → user approval            ✓ AiSessionController.approveProposal
+  → ArchiSimple endpoint     ✓ realiseApprovedSpecification — the one path
+  → model mutation           ✓ walls, openings and named rooms, one undo entry
+  → RealisationRecord        ✓ written by the existing mechanism
+  → AI response              ✓ "already been built", when asked again
+```
+
+And the step a naive implementation gets wrong: **undo empties the drawing and
+the design stays built.** Asking again still explains rather than offering to
+rebuild, because nothing in this layer infers realisation from geometry.
+
+## What is deliberately still true
+
+- The assistant's refusal to propose is **conversational**. The host's guard
+  remains the authority on whether a build may happen (ADR-AI-0004 Rule 4).
+- This layer never reports a realisation _outcome_ in its own words — the result
+  comes back as the proposal's `executionResult`, which it does not see
+  (ADR-AI-0002 Rule 2).
+- No npm release was required by any phase: no platform package changed, and the
+  linked workspace resolves both packages locally.
+
+**Browser verification remains outstanding** — every claim above is proved by
+tests through the real composition, which is not the same as a person watching it
+happen.
 
 ---
 

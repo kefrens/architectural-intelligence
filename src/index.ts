@@ -329,8 +329,13 @@ export {
  * behind one host entry point, and this package holds none of them.
  */
 export {
+  createInMemoryRealisationStateReader,
   describeRealisation,
+  REALISATION_STATUSES,
   toRealisationProposal,
+  type RealisationState,
+  type RealisationStateReader,
+  type RealisationStatus,
   type RealisationSubject
 } from './realisation/index.js';
 

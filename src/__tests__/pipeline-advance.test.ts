@@ -32,11 +32,12 @@ import {
   type ApprovedArtefact,
   type PlanningArtefactReader
 } from '../artefacts/planning-artefact-reader.js';
-import { assembleBrief, classifyRequest } from '../brief/index.js';
+import { assembleBrief, classifyRequest, REQUEST_LANES } from '../brief/index.js';
 import { PLAN_BLOCKER_REASONS } from '../planning/index.js';
 import { SPACE_PROGRAMME_KIND, type SpaceProgramme } from '../programme/index.js';
 import { LAYOUT_PLAN_KIND } from '../layout/index.js';
 import {
+  createCaptureBriefToolDefinition,
   createGeometryToolDefinition,
   createLayoutToolDefinition,
   createProgrammeToolDefinition,
@@ -112,6 +113,261 @@ function claimsTheSlot(
 }
 
 // --- The gates were never the problem -------------------------------------------
+
+/**
+ * BUG-009 — the reported conversation, from the first word to a buildable design.
+ *
+ * "Build me a 100 m² apartment", two bedrooms, two bathrooms — and before this
+ * fix, `planning_captureBrief` refused every call for want of a storey count
+ * nobody says out loud about an apartment. No artefact was produced, no card
+ * ever appeared, and the model narrated four stages that did not exist.
+ *
+ * This walks the whole pipeline the way a model plus a clicking user do: capture,
+ * approve, generate, approve, five times. It is the test that would have caught
+ * the bug, because it starts where the user started rather than from a Brief
+ * somebody built by hand.
+ */
+/**
+ * BUG-010 — the user is not the workflow's orchestrator.
+ *
+ * Every stage below the Brief is a **derivation**: it needs the artefact above it
+ * approved and nothing else. Before this lane, saying so required naming the
+ * artefact — "generate the programme" worked and "ok", "next", "continue" and
+ * "go ahead" all fell into Direct Execution, so a user who had just pressed
+ * Approve had to know what came next and type its name.
+ *
+ * The lane removes the typing. It does not remove the approving: each artefact
+ * still reaches the user as a proposal, which is BUG-010's Shape B decision.
+ */
+describe('BUG-010 — carrying on without naming the next stage', () => {
+  /** A project with an approved Brief and nothing after it. */
+  function afterTheBrief() {
+    const artefacts: ApprovedArtefact[] = [];
+    const reader: PlanningArtefactReader = {
+      current: (kind) => createInMemoryPlanningArtefactReader(artefacts).current(kind),
+      all: () => artefacts
+    };
+    const service = new ArchitecturalIntelligenceService({
+      knowledge: createHarness().knowledge,
+      artefacts: reader
+    });
+    const brief = assembleBrief({ utterance: REQUEST, classification: classifyRequest(REQUEST) });
+    artefacts.push({ kind: brief.kind, id: brief.id, revision: brief.revision, value: brief });
+
+    /** One turn, approving whatever it proposed — the user's press. */
+    const say = (utterance: string) => {
+      const response = service.interpret(utterance);
+      const artefact = response.proposal?.subject;
+      if (artefact !== undefined && artefact.kind === 'artefact') {
+        artefacts.push(artefact.artefact as ApprovedArtefact);
+      }
+      return response;
+    };
+
+    return { service, artefacts, say };
+  }
+
+  const CONTINUATIONS = [
+    'ok',
+    'okay',
+    'yes',
+    'next',
+    'continue',
+    'go ahead',
+    'carry on',
+    'proceed'
+  ];
+
+  it.each(CONTINUATIONS)('"%s" generates the stage that was waiting', (utterance) => {
+    const response = afterTheBrief().say(utterance);
+
+    expect(response.classification?.lane).toBe(REQUEST_LANES.Continuation);
+    expect(response.programme).toBeDefined();
+  });
+
+  /**
+   * The reason the pattern is anchored: a continuation is the *whole* utterance.
+   * "ok, now delete that wall" is a modelling command with a politeness in front
+   * of it, and Story 27.8.3 is about not hijacking those.
+   */
+  it('leaves a command with a polite opener where it belongs', () => {
+    const response = afterTheBrief().say('ok, now delete that wall');
+
+    expect(response.classification?.lane).toBe(REQUEST_LANES.DirectExecution);
+    expect(response.programme).toBeUndefined();
+  });
+
+  it('still lets the user name the stage they want', () => {
+    const response = afterTheBrief().say('generate the programme');
+
+    expect(response.classification?.lane).toBe(REQUEST_LANES.ProgrammeGeneration);
+    expect(response.programme).toBeDefined();
+  });
+
+  /** BUG-010's acceptance scenario, minus the typing. */
+  it('walks the remaining four stages on "ok" alone', () => {
+    const project = afterTheBrief();
+
+    for (let turn = 0; turn < 4; turn += 1) {
+      expect(project.say('ok').classification?.lane).toBe(REQUEST_LANES.Continuation);
+    }
+
+    expect(project.artefacts.map((artefact) => artefact.kind)).toEqual([
+      'architectural-brief',
+      SPACE_PROGRAMME_KIND,
+      LAYOUT_PLAN_KIND,
+      'geometry-graph',
+      'geometry-specification'
+    ]);
+  });
+
+  /** And then stops: there is nothing left to derive, and building is not "carrying on". */
+  it('stops when the pipeline is complete', () => {
+    const project = afterTheBrief();
+    for (let turn = 0; turn < 4; turn += 1) {
+      project.say('ok');
+    }
+
+    expect(project.say('ok').classification?.lane).toBe(REQUEST_LANES.DirectExecution);
+    expect(project.say('Build it.').classification?.lane).toBe(REQUEST_LANES.Realisation);
+  });
+
+  /**
+   * The Brief is the one stage a continuation cannot produce: it is written from
+   * what the user said, and "ok" says nothing about a building.
+   */
+  it('does not try to write a brief from "ok"', () => {
+    const service = new ArchitecturalIntelligenceService({
+      knowledge: createHarness().knowledge,
+      artefacts: createInMemoryPlanningArtefactReader([])
+    });
+
+    const response = service.interpret('ok');
+
+    expect(response.classification?.lane).not.toBe(REQUEST_LANES.Continuation);
+    expect(response.brief).toBeUndefined();
+  });
+
+  /**
+   * An open clarification consumes the turn first, exactly as it did before —
+   * "ok" answering "how many storeys?" is an answer, not a continuation.
+   */
+  it('never takes a turn an open clarification is waiting for', () => {
+    const service = new ArchitecturalIntelligenceService({
+      knowledge: createHarness().knowledge,
+      artefacts: createInMemoryPlanningArtefactReader([]),
+      briefDrafts: (() => {
+        let held: unknown;
+        return {
+          load: () => held,
+          save: (draft: unknown) => {
+            held = draft;
+          },
+          clear: () => {
+            held = undefined;
+          }
+        };
+      })() as never
+    });
+    service.interpret('Design a family home');
+
+    const response = service.interpret('ok');
+
+    expect(response.classification?.lane).not.toBe(REQUEST_LANES.Continuation);
+  });
+});
+
+describe('BUG-009 — an apartment reaches a buildable design', () => {
+  function conversation() {
+    const artefacts: ApprovedArtefact[] = [];
+    const reader: PlanningArtefactReader = {
+      current: (kind) => createInMemoryPlanningArtefactReader(artefacts).current(kind),
+      all: () => artefacts
+    };
+    const service = new ArchitecturalIntelligenceService({
+      knowledge: createHarness().knowledge,
+      artefacts: reader
+    });
+    const context = {
+      conversation: {
+        lastUserMessage: 'Build me a 100m² apartment',
+        userMessages: ['2 bedrooms, 2 bathrooms', 'Build me a 100m² apartment']
+      }
+    };
+
+    /** Resolves a tool and approves whatever it proposed, as the user's click does. */
+    const step = (tool: { resolve: (a: never, c: never) => unknown }, args = {}) => {
+      const resolved = tool.resolve(args as never, context as never) as
+        | { kind: 'proposal'; proposal: { subject: { kind: string; artefact: ApprovedArtefact } } }
+        | { kind: 'blocked'; message: string }
+        | undefined;
+      if (resolved?.kind !== 'proposal') {
+        throw new Error(
+          `expected a proposal, got ${resolved?.kind ?? 'nothing'}${
+            resolved?.kind === 'blocked' ? `: ${resolved.message}` : ''
+          }`
+        );
+      }
+      artefacts.push(resolved.proposal.subject.artefact);
+      return resolved.proposal.subject.artefact.kind;
+    };
+
+    return { service, artefacts, step };
+  }
+
+  it('captures a brief without asking how many storeys an apartment has', () => {
+    const { step } = conversation();
+
+    expect(
+      step(createCaptureBriefToolDefinition(conversation().service) as never, {
+        bedrooms: 2,
+        bathrooms: 2,
+        objectives: ['A 100 m² apartment']
+      })
+    ).toBe('architectural-brief');
+  });
+
+  it('walks all five stages to an approved geometry specification', () => {
+    const { service, artefacts, step } = conversation();
+
+    step(createCaptureBriefToolDefinition(service) as never, {
+      bedrooms: 2,
+      bathrooms: 2,
+      objectives: ['A 100 m² apartment']
+    });
+    step(createProgrammeToolDefinition(service) as never);
+    step(createLayoutToolDefinition(service) as never);
+    step(createGeometryToolDefinition(service) as never);
+    step(createSpecificationToolDefinition(service) as never);
+
+    expect(artefacts.map((artefact) => artefact.kind)).toEqual([
+      'architectural-brief',
+      SPACE_PROGRAMME_KIND,
+      LAYOUT_PLAN_KIND,
+      'geometry-graph',
+      'geometry-specification'
+    ]);
+  });
+
+  /** And then the ninth lane can do its job, which is BUG-008's half. */
+  it('offers to build the design it just approved', () => {
+    const { service, step } = conversation();
+    step(createCaptureBriefToolDefinition(service) as never, {
+      bedrooms: 2,
+      bathrooms: 2,
+      objectives: ['A 100 m² apartment']
+    });
+    step(createProgrammeToolDefinition(service) as never);
+    step(createLayoutToolDefinition(service) as never);
+    step(createGeometryToolDefinition(service) as never);
+    step(createSpecificationToolDefinition(service) as never);
+
+    const response = service.interpret('Build it.');
+
+    expect(response.classification?.lane).toBe('realisation');
+    expect(response.proposal).toBeDefined();
+  });
+});
 
 describe('the approval gates (already correct before Bug 005)', () => {
   it('blocks every downstream stage when only the Brief is approved', () => {

@@ -103,6 +103,29 @@ const TYPOLOGY = /\b([TF])\s?([1-9])\b/i;
 export const DWELLING_WORDS =
   /\b(house|home|apartment|appartment|appartement|flat|villa|bungalow|cottage|studio|dwelling|residence|maisonette|maisonnette|duplex|townhouse|penthouse)\b/i;
 
+/**
+ * Dwellings that are single-storey by what the word means (BUG-009).
+ *
+ * An apartment occupies one level of a building; so does a flat and a studio; a
+ * bungalow is single-storey by definition. Asking their owner "how many
+ * storeys?" is asking a question the word already answered, and BUG-009 is what
+ * it cost: the reporter said "build me a 100 m² apartment", supplied bedrooms
+ * and bathrooms, and `planning_captureBrief` refused every call for want of a
+ * storey count nobody says out loud. No artefact was ever produced, and the
+ * model narrated four stages that did not exist.
+ *
+ * **Deliberately not `house`, `villa` or `cottage`** — those are genuinely
+ * ambiguous and the question is worth asking. And deliberately not `duplex`,
+ * `maisonette`, `townhouse` or `penthouse`, which imply *more* than one storey
+ * and would need a different number rather than this one.
+ *
+ * The implication is recorded as an **assumption**, never as something the user
+ * said, so it appears in the Brief the user reviews and can be corrected by
+ * saying otherwise (BUG-009 §7.1 A).
+ */
+export const SINGLE_STOREY_DWELLINGS =
+  /\b(apartment|appartment|appartement|flat|studio|bungalow)\b/i;
+
 interface TopicRule {
   readonly topic: string;
   readonly pattern: RegExp;
@@ -245,6 +268,25 @@ export function readBriefTopics(
   // A typology code states a bedroom count the prose never spells out, and only
   // when the prose did not already say one — "T4 with 2 bedrooms" is the user
   // correcting the shorthand, and the explicit number wins.
+  // A dwelling type that means one storey states one, the same way a typology
+  // code below states a bedroom count the prose never spells out (BUG-009).
+  //
+  // `Assumed` rather than `source`, whatever the caller asked for: the user said
+  // "apartment", not "one storey", and a Brief that claimed otherwise would be
+  // putting words in their mouth. What the two cases share is that the word
+  // carries the number; what they do not share is who said it.
+  if (
+    SINGLE_STOREY_DWELLINGS.test(text) &&
+    !requirements.some((requirement) => requirement.topic === BRIEF_TOPICS.Storeys)
+  ) {
+    requirements.push({
+      topic: BRIEF_TOPICS.Storeys,
+      statement: '1 storey',
+      value: 1,
+      source: BRIEF_REQUIREMENT_SOURCES.Assumed
+    });
+  }
+
   const typology = text.match(TYPOLOGY);
   if (
     typology &&

@@ -218,6 +218,23 @@ artefacts:
         type: SpaceRelationship
         kinds: [adjacent, separated]
         note: 'topological only; names spaces rather than identifying them (ADR-AI-0003 Rules 1, 2)'
+      topicSpaces:
+        sprint: bug-007
+        file: src/brief/topic-spaces.ts
+        topics: [bedrooms, bathrooms, garage, office]
+        matchedBy: role
+        rules:
+          - 'a named space states its boolean topic before any default is applied'
+          - 'a stated boolean topic produces its space, so the Programme has a room for it'
+          - 'only a missing or assumed value is replaced; stated and answered are never overruled'
+          - 'counted topics are never inferred from a space: a bedroom in the list says one exists, not how many'
+        alsoReadBy: src/programme/programme-synthesis.ts
+      intentBackstop:
+        sprints: [bug-003, bug-005, bug-007]
+        topics: [totalArea, storeys, bedrooms, bathrooms]
+        reads: [conversation user turns newest first, tool utterance, model objectives]
+        requires: 'ai-engine conversation context fragment (userMessages)'
+        note: 'only fills a topic the caller omitted; the four patterns demand an explicit number beside an explicit noun'
       assembledBy: src/brief/brief-assembly.ts
       provenance: none
     - kind: space-programme

@@ -33,6 +33,7 @@ import {
   BRIEF_TOPICS,
   briefRequirement,
   SPACE_RELATIONSHIP_KINDS,
+  topicForSpaceName,
   type ArchitecturalBrief,
   type DesiredSpace,
   type SpaceRelationship
@@ -172,22 +173,20 @@ function priorityFor(name: string, brief: ArchitecturalBrief, implied: boolean):
   }
 
   // A space that maps onto a brief topic inherits that requirement's source.
-  const topic = TOPIC_BY_SPACE[name.toLowerCase()];
+  //
+  // The mapping is `brief/topic-spaces.ts`'s, not a second one here (Bug 007).
+  // This file held its own literal record of it — five exact space names — while
+  // `withDefaults` held the other half and read neither. That is how a Brief came
+  // to carry a home office and the requirement `office = false` at once, and how
+  // the office the user asked for was demoted to `optional` by the assumption
+  // that denied it.
+  const topic = topicForSpaceName(name);
   const source = topic === undefined ? undefined : briefRequirement(brief, topic)?.source;
   if (source === BRIEF_REQUIREMENT_SOURCES.Assumed) {
     return SPACE_PRIORITIES.Optional;
   }
   return SPACE_PRIORITIES.Required;
 }
-
-/** Spaces that exist because a brief topic said so, so their priority follows that topic's source. */
-const TOPIC_BY_SPACE: Readonly<Record<string, string>> = {
-  bedroom: BRIEF_TOPICS.Bedrooms,
-  bathroom: BRIEF_TOPICS.Bathrooms,
-  garage: BRIEF_TOPICS.Garage,
-  'home office': BRIEF_TOPICS.Office,
-  study: BRIEF_TOPICS.Office
-};
 
 /**
  * The spaces the programme will contain: what the Brief named, plus what a

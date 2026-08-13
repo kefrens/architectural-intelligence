@@ -45,6 +45,12 @@ import {
   readSpaceRelationships
 } from './brief-topics.js';
 import { MANDATORY_BRIEF_TOPICS, type RequestClassification } from './request-classification.js';
+import {
+  namesTopicSpace,
+  TOPIC_SPACES,
+  topicForSpaceName,
+  topicSpaceFor
+} from './topic-spaces.js';
 
 /**
  * Topics the platform fills in rather than asks about.
@@ -54,24 +60,32 @@ import { MANDATORY_BRIEF_TOPICS, type RequestClassification } from './request-cl
  * topic only belongs here if being wrong about it costs the user a sentence
  * rather than a redesign, which is why bedrooms and storeys are mandatory
  * instead.
+ *
+ * `whenNamed` is what the requirement says when the user named the *space*
+ * instead of the topic (Bug 007) — the wording `readBriefTopics` produces for the
+ * same statement, so a Brief cannot be read back to which path recorded it.
+ * Absent for a topic no space corresponds to.
  */
 const DEFAULTED_TOPICS: readonly {
   readonly topic: string;
   readonly value: string | number | boolean;
   readonly statement: string;
   readonly assumption: string;
+  readonly whenNamed?: string;
 }[] = [
   {
     topic: BRIEF_TOPICS.Garage,
     value: false,
     statement: 'no garage',
-    assumption: 'No garage, since none was mentioned.'
+    assumption: 'No garage, since none was mentioned.',
+    whenNamed: 'a garage'
   },
   {
     topic: BRIEF_TOPICS.Office,
     value: false,
     statement: 'no home office',
-    assumption: 'No home office, since none was mentioned.'
+    assumption: 'No home office, since none was mentioned.',
+    whenNamed: 'a home office'
   },
   {
     topic: BRIEF_TOPICS.Accessibility,
@@ -157,15 +171,17 @@ function withBackstopTopics(
 }
 
 /**
- * Every text the backstop may read, in precedence order (Bug 005).
+ * Every text the backstop may read, in precedence order (Bug 005, widened by
+ * Bug 007).
  *
- * The user's own message first, then the model's own words for this Brief.
+ * The user's own messages first, newest first, then the model's own words for
+ * this Brief.
  *
  * Reading the model's words back is not redundant, and the conversation that
  * exposed Bug 005 is why. The first `planning_captureBrief` omitted `storeys`,
  * so the host asked; the user answered **"single storey"**; the model called the
- * tool again. At that moment `userMessage` was "single storey" — the 100 m² was
- * two turns behind, and a backstop reading only the latest message recovers
+ * tool again. At that moment the latest message was "single storey" — the 100 m²
+ * was two turns behind, and a backstop reading only that message recovers
  * nothing.
  *
  * What *did* still carry it was the model's own objective, inside the same tool
@@ -173,16 +189,28 @@ function withBackstopTopics(
  * office". A model that read the requirement well enough to paraphrase it and
  * then failed to put it in a numeric argument has still told us the number.
  *
- * `BACKSTOP_TOPICS` is what makes reading a paraphrase safe: those four patterns
- * need an explicit number beside an explicit noun, so a restatement either
- * contains the figure or matches nothing.
+ * Bug 007 is the same conversation with a model that did *not* paraphrase the
+ * number, and it is why `userMessages` exists: the sentence was still there, two
+ * turns up, and nothing could reach it. Newest first, so a user who revises
+ * 100 m² to 120 m² is not overruled by their own first sentence —
+ * {@link withBackstopTopics} fills a topic once and skips it thereafter.
+ *
+ * `BACKSTOP_TOPICS` is what makes reading an older turn safe, exactly as it made
+ * reading a paraphrase safe: those four patterns need an explicit number beside
+ * an explicit noun, so a sentence either contains the figure or matches nothing.
  */
 function backstopTexts(fields: {
   readonly userMessage?: string;
+  readonly userMessages?: readonly string[];
   readonly utterance?: string;
   readonly objectives?: readonly string[];
 }): readonly (string | undefined)[] {
-  return [fields.userMessage, fields.utterance, ...(fields.objectives ?? [])];
+  return [
+    fields.userMessage,
+    ...(fields.userMessages ?? []),
+    fields.utterance,
+    ...(fields.objectives ?? [])
+  ];
 }
 
 /**
@@ -213,12 +241,68 @@ function mergedRelationships(
   return result;
 }
 
-/** Applies every default the requirements do not already cover. */
-function withDefaults(requirements: readonly BriefRequirement[]): {
+/**
+ * The topics a *named space* states, for topics nobody has stated otherwise
+ * (Bug 007, and §4's rule: unspecified must not become false).
+ *
+ * `planning_captureBrief` exposes a home office two ways — as the `office` flag
+ * and as an entry in `spaces` — and a model that lists the space and omits the
+ * flag has still said the office exists. Reading only the requirements is what
+ * produced a Brief carrying a `home office` space, an `office = false`
+ * requirement and the assumption "No home office, since none was mentioned", all
+ * three at once.
+ *
+ * Two things it deliberately will not do:
+ *
+ * - **Overrule.** A topic already `stated` or `answered` is the user's, and a
+ *   user who says "a study, but no home office" has said something odd rather
+ *   than something this function should quietly resolve. Only a missing topic or
+ *   one the platform `assumed` is replaced.
+ * - **Count.** A "bedroom" in the space list says a bedroom exists, not how many,
+ *   so counted topics are skipped — the count is the requirement's whole content
+ *   and inventing one would be the invention Bug 003 forbids.
+ */
+function withSpaceStatedTopics(
+  requirements: readonly BriefRequirement[],
+  spaces: readonly DesiredSpace[]
+): readonly BriefRequirement[] {
+  let result = requirements;
+
+  for (const entry of TOPIC_SPACES) {
+    if (!entry.boolean || !namesTopicSpace(spaces, entry)) {
+      continue;
+    }
+    const existing = result.find((requirement) => requirement.topic === entry.topic);
+    if (existing !== undefined && existing.source !== BRIEF_REQUIREMENT_SOURCES.Assumed) {
+      continue;
+    }
+    const defaulted = DEFAULTED_TOPICS.find((candidate) => candidate.topic === entry.topic);
+    result = withRequirement(result, {
+      topic: entry.topic,
+      statement: defaulted?.whenNamed ?? `a ${entry.space}`,
+      value: true,
+      source: BRIEF_REQUIREMENT_SOURCES.Stated
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Applies every default the requirements do not already cover — and, first, every
+ * topic the spaces already state (Bug 007).
+ *
+ * The order is the fix. A default may only fill a topic nothing has answered, and
+ * a space the user named *is* an answer.
+ */
+function withDefaults(
+  requirements: readonly BriefRequirement[],
+  desiredSpaces: readonly DesiredSpace[] = []
+): {
   readonly requirements: readonly BriefRequirement[];
   readonly assumptions: readonly string[];
 } {
-  let result = requirements;
+  let result = withSpaceStatedTopics(requirements, desiredSpaces);
   const assumptions: string[] = [];
 
   for (const candidate of DEFAULTED_TOPICS) {
@@ -269,7 +353,13 @@ export interface AssembleBriefOptions {
  */
 export function assembleBrief(options: AssembleBriefOptions): ArchitecturalBrief {
   const stated = readBriefTopics(options.utterance);
-  const { requirements, assumptions } = withDefaults(stated);
+  // Spaces before defaults, then again after: a space the sentence named may
+  // state a topic (Bug 007), and a topic it stated may name a space. Deriving
+  // twice from the same reader is what keeps the two answers consistent.
+  const { requirements, assumptions } = withDefaults(
+    stated,
+    desiredSpacesFrom(options.utterance, stated)
+  );
 
   return createBrief({
     utterance: options.utterance,
@@ -396,6 +486,8 @@ export function reviseBriefFromFields(
      * own with.
      */
     readonly userMessage?: string;
+    /** The turns before it, newest first (Bug 007). */
+    readonly userMessages?: readonly string[];
   }
 ): ArchitecturalBrief | undefined {
   let requirements = approved.requirements;
@@ -423,6 +515,20 @@ export function reviseBriefFromFields(
         (existing) => existing.name === space.name && existing.count === space.count
       )
   );
+
+  // A space the revision brings states its topic, exactly as it does on the two
+  // paths that build a Brief from nothing (Bug 007) — this is the path the
+  // reported conversation took, where the office arrived a turn after the Brief
+  // that had already assumed it away.
+  //
+  // Only an `assumed` topic moves, so this cannot overrule the user. It can make
+  // an otherwise-unchanged re-capture look like a change, and that is correct
+  // rather than the supersession theatre Story 1.5.3 forbids: a Brief that stops
+  // contradicting itself has genuinely changed.
+  requirements = withSpaceStatedTopics(requirements, [
+    ...approved.desiredSpaces,
+    ...addedSpaces
+  ]);
 
   // A relationship the Brief did not already hold is the user telling us
   // something new, exactly as a changed requirement is (Bug 004).
@@ -521,7 +627,7 @@ export function answerClarification(draft: ArchitecturalBrief, answer: string): 
     return reviseBrief(draft, { requirements, openQuestions });
   }
 
-  const complete = withDefaults(requirements);
+  const complete = withDefaults(requirements, draft.desiredSpaces);
   return reviseBrief(draft, {
     requirements: complete.requirements,
     // A user answering "how many bathrooms?" may say more than was asked, and a
@@ -587,8 +693,22 @@ function withCountedSpaces(
   supplied: readonly DesiredSpace[],
   requirements: readonly BriefRequirement[]
 ): readonly DesiredSpace[] {
+  // By name first, then by role (Bug 007): the derivation now also produces the
+  // space a boolean topic names, and a model that passed `office: true` beside a
+  // space it called "office" must not come back with a second "home office".
+  //
+  // The text stays empty, for the reason above — re-reading the supplied names
+  // would let `NAMED_SPACES` match inside a compound the user chose — so the role
+  // check that `desiredSpacesFrom` cannot make happens here instead.
   const has = (name: string): boolean =>
-    supplied.some((space) => space.name.trim().toLowerCase().replace(/s$/, '') === name);
+    supplied.some((space) => {
+      const normalised = space.name.trim().toLowerCase().replace(/s$/, '');
+      if (normalised === name) {
+        return true;
+      }
+      const entry = topicSpaceFor(topicForSpaceName(name) ?? '');
+      return entry !== undefined && entry.role.test(space.name);
+    });
 
   const counted = desiredSpacesFrom('', requirements).filter((space) => !has(space.name));
   return counted.length === 0 ? supplied : [...supplied, ...counted];
@@ -628,6 +748,8 @@ export function assembleBriefFromFields(fields: {
   readonly relationships?: readonly SpaceRelationship[];
   /** The user's own words, for {@link withBackstopTopics} (Bug 003). */
   readonly userMessage?: string;
+  /** The turns before it, newest first (Bug 007). */
+  readonly userMessages?: readonly string[];
   readonly now?: number;
 }): ArchitecturalBrief {
   let requirements: readonly BriefRequirement[] = [];
@@ -645,7 +767,8 @@ export function assembleBriefFromFields(fields: {
 
   // Defaults are for a Brief that is otherwise complete, exactly as on the
   // offline path — an incomplete one keeps its questions instead.
-  const finished = openQuestions.length === 0 ? withDefaults(requirements) : undefined;
+  const finished =
+    openQuestions.length === 0 ? withDefaults(requirements, fields.spaces ?? []) : undefined;
 
   return createBrief({
     utterance: fields.utterance,

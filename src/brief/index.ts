@@ -29,6 +29,14 @@ export {
 } from './brief-topics.js';
 
 export {
+  namesTopicSpace,
+  TOPIC_SPACES,
+  topicForSpaceName,
+  topicSpaceFor,
+  type TopicSpace
+} from './topic-spaces.js';
+
+export {
   classifyRequest,
   MANDATORY_BRIEF_TOPICS,
   REQUEST_LANES,

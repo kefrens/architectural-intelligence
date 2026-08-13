@@ -195,14 +195,34 @@ A mandatory topic counts as answered only when its value means something: a
 count below its minimum leaves the topic absent so the host asks, rather than
 recording "0 storeys" as a settled requirement (Bug 006).
 
+A topic and a space are **one statement in two vocabularies**
+([topic-spaces.ts](../../src/brief/topic-spaces.ts), Bug 007). A user asks for a
+home office either as the `office` topic or as a space called "home office", and
+each side now completes the other: a named space states its topic before any
+default is applied, and a stated topic produces its space. Both directions read
+one table, matching by role — "study", "office" and "home office" are one thing —
+and the same table tells the Space Programme which topic a space belongs to.
+
+The completion is asymmetric on purpose: it only ever replaces a **missing or
+assumed** value. A topic the user stated or answered is theirs, so a named space
+never overrules an explicit refusal. Unspecified must not become false; explicit
+must not be overwritten.
+
 Assembled by the host from resolved tool calls and typed data
 ([brief-assembly.ts](../../src/brief/brief-assembly.ts)) — never parsed out of
 model prose. Both capture paths agree: whatever the model leaves out of a tool
-call, a deterministic reader recovers from the user's own message — the four
-high-confidence topics, and any relationship plainly stated (Bug 003, Bug 004). An unfinished Brief lives in a `BriefDraftStore` between turns; an
-approved one lives in the project file. Those are deliberately different places:
-a draft is a conversation in progress, an approved artefact is something the
-project has committed to.
+call, a deterministic reader recovers from the user's own messages — the four
+high-confidence topics, and any relationship plainly stated (Bug 003, Bug 004).
+That reader sees the **conversation**, not only the latest turn (Bug 007): a
+clarification dialogue puts a requirement and the tool call that should record it
+several messages apart, and newest-first order means a user who revises a figure
+is not overruled by their own first sentence. Only the four topics whose patterns
+demand an explicit number beside an explicit noun may be recovered this way.
+
+An unfinished Brief lives in a `BriefDraftStore` between turns; an approved one
+lives in the project file. Those are deliberately different places: a draft is a
+conversation in progress, an approved artefact is something the project has
+committed to.
 
 ## Space Programme (Sprint 27.9)
 

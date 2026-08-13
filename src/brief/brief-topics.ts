@@ -27,6 +27,7 @@ import {
   type SpaceRelationship,
   type SpaceRelationshipKind
 } from './architectural-brief.js';
+import { TOPIC_SPACES } from './topic-spaces.js';
 
 /** Number words a request plausibly uses for a count of rooms or storeys. */
 const NUMBER_WORDS: ReadonlyMap<string, number> = new Map([
@@ -450,6 +451,30 @@ export function desiredSpacesFrom(
     if (pattern.test(text) && !spaces.some((space) => space.name === name)) {
       spaces.push({ name, count: 1 });
     }
+  }
+
+  // The converse of `withSpaceStatedTopics` (Bug 007). A topic stated as a flag
+  // — `office: true`, from the tool argument or from "with a home office" — is a
+  // space the user asked for, and a Brief that requires an office while its
+  // desired spaces name none produces a Programme with no room for it: the
+  // Programme builds from `desiredSpaces`, and `requirements` is not somewhere it
+  // looks for a space.
+  //
+  // By role, and against the text as well as the spaces derived above, so a
+  // brief that already named a "study" or a bare "office" gains nothing. Callers
+  // that hold spaces this function cannot see pass their names as the text —
+  // `mergeSpaces` does exactly that.
+  for (const entry of TOPIC_SPACES) {
+    const value = requirements.find((requirement) => requirement.topic === entry.topic)?.value;
+    if (
+      !entry.boolean ||
+      value !== true ||
+      entry.role.test(text) ||
+      spaces.some((space) => entry.role.test(space.name))
+    ) {
+      continue;
+    }
+    spaces.push({ name: entry.space, count: 1 });
   }
 
   return spaces;

@@ -336,9 +336,18 @@ export function createCaptureBriefToolDefinition(
       // The user's own words. The model's arguments are a *reading* of them, and
       // Bug 003 is what the difference costs: a `totalArea` the model did not
       // pass is gone unless something re-reads the sentence it came from.
-      const userMessage = (
-        context['conversation'] as { readonly lastUserMessage?: string } | undefined
-      )?.lastUserMessage;
+      //
+      // The earlier turns come too (Bug 007). A clarification dialogue puts the
+      // requirement and this call several messages apart — "a 100m2 appartment"
+      // is turn one, and the Brief is captured after the storeys, bedrooms and
+      // bathrooms questions have been answered.
+      const conversation = context['conversation'] as
+        | { readonly lastUserMessage?: string; readonly userMessages?: readonly string[] }
+        | undefined;
+      const userMessage = conversation?.lastUserMessage;
+      // `lastUserMessage` is already the first of these, and `withBackstopTopics`
+      // fills a topic once — so passing both costs a re-read and no ambiguity.
+      const userMessages = conversation?.userMessages ?? [];
 
       // The utterance the brief quotes back. Still the model's objective first —
       // it is a summary of the whole conversation, where `userMessage` is only
@@ -355,6 +364,7 @@ export function createCaptureBriefToolDefinition(
           spaces,
           requirements,
           relationships,
+          userMessages,
           ...(userMessage === undefined ? {} : { userMessage })
         });
       }
@@ -365,6 +375,7 @@ export function createCaptureBriefToolDefinition(
         spaces,
         requirements,
         relationships,
+        userMessages,
         ...(userMessage === undefined ? {} : { userMessage })
       });
 
@@ -402,6 +413,8 @@ function reviseApproved(
     readonly relationships: readonly SpaceRelationship[];
     /** The user's own words, re-read for the topics the model omitted (Bug 003). */
     readonly userMessage?: string;
+    /** The turns before it, newest first (Bug 007). */
+    readonly userMessages?: readonly string[];
   }
 ): ResolvedToolCall {
   const revised = reviseBriefFromFields(approved, {
@@ -409,6 +422,7 @@ function reviseApproved(
     spaces: fields.spaces,
     relationships: fields.relationships,
     objectives: fields.objectives,
+    ...(fields.userMessages === undefined ? {} : { userMessages: fields.userMessages }),
     ...(fields.userMessage === undefined ? {} : { userMessage: fields.userMessage })
   });
 

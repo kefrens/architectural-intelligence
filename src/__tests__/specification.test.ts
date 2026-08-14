@@ -12,6 +12,7 @@
  */
 
 import { isArtefactProposal } from '@archisimple/ai-engine';
+import { EVALUATION_STAGES } from '@archisimple/skills';
 import { describe, expect, it } from 'vitest';
 import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import { createInMemoryPlanningArtefactReader } from '../artefacts/planning-artefact-reader.js';
@@ -39,7 +40,8 @@ import {
   validateGeometrySpecification,
   wallHeight,
   type GeometryGraph,
-  type GeometrySpecification
+  type GeometrySpecification,
+  type SpecificationCompliance
 } from '../geometry/index.js';
 import { LAYOUT_PLAN_KIND, synthesizeLayout, type LayoutPlan } from '../layout/index.js';
 import {
@@ -495,6 +497,73 @@ describe('the specification lane', () => {
       properties: {},
       required: []
     });
+  });
+});
+
+/**
+ * ArchiSimple Sprint 038.0 — ADR-0035 §7, Rule 5.
+ *
+ * `toGeometrySpecificationProposal` is the one place `SpecificationCompliance`
+ * becomes the generic `ProposalComplianceSignal` `ai-engine` can gate approval
+ * on. What is asserted here is the mapping, not the evaluator (tested fully in
+ * `constraint-evaluation.test.ts`) — a hand-built `SpecificationCompliance` is
+ * enough, and keeps this test from depending on which fixture happens to fail
+ * a given constraint today.
+ */
+describe('the compliance signal crosses to ai-engine (ArchiSimple Sprint 038.0)', () => {
+  const EMPTY_TALLY = { stated: 0, evaluated: 0, passed: 0, failed: 0, notApplicable: 0 };
+
+  function complianceWith(requiredFailed: number): SpecificationCompliance {
+    return {
+      summary: {
+        evaluatedStage: EVALUATION_STAGES.GeometrySpecification,
+        total: { ...EMPTY_TALLY, stated: 1, evaluated: 1, failed: requiredFailed },
+        byStrength: {
+          required: { ...EMPTY_TALLY, stated: 1, evaluated: 1, failed: requiredFailed },
+          preferred: EMPTY_TALLY,
+          avoid: EMPTY_TALLY
+        }
+      },
+      results: [],
+      failures: []
+    };
+  }
+
+  it('reports evaluated: false and no failures when nothing was checked (compliance omitted)', () => {
+    const specification = specificationFrom(graphFor(ONE_STOREY));
+
+    const proposal = toGeometrySpecificationProposal(specification);
+
+    expect(proposal.compliance).toEqual({ evaluated: false, requiredFailures: 0 });
+  });
+
+  it('reports evaluated: true and zero failures when every required constraint passed', () => {
+    const specification = specificationFrom(graphFor(ONE_STOREY));
+
+    const proposal = toGeometrySpecificationProposal(specification, complianceWith(0));
+
+    expect(proposal.compliance).toEqual({ evaluated: true, requiredFailures: 0 });
+  });
+
+  it('reports the required-failure count — the only fact ai-engine may gate confirmation on', () => {
+    const specification = specificationFrom(graphFor(ONE_STOREY));
+
+    const proposal = toGeometrySpecificationProposal(specification, complianceWith(2));
+
+    expect(proposal.compliance).toEqual({ evaluated: true, requiredFailures: 2 });
+  });
+
+  it('never leaks ConstraintResult, ConstraintEvaluationSummary or SpecificationCompliance onto the proposal', () => {
+    const specification = specificationFrom(graphFor(ONE_STOREY));
+
+    const proposal = toGeometrySpecificationProposal(specification, complianceWith(1));
+
+    // Exactly the two primitives Rule 5 allows — nothing shaped like the
+    // evaluator's own vocabulary reaches ai-engine through this field.
+    expect(Object.keys(proposal.compliance ?? {}).sort()).toEqual([
+      'evaluated',
+      'requiredFailures'
+    ]);
   });
 });
 

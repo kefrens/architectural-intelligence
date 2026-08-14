@@ -19,7 +19,11 @@
  * drawn, and it is not.
  */
 
-import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
+import {
+  createArtefactProposal,
+  type Proposal,
+  type ProposalComplianceSignal
+} from '@archisimple/ai-engine';
 import { contributionNotes } from '../artefacts/enriched-artefact.js';
 import {
   describeSpecificationCompliance,
@@ -79,8 +83,30 @@ export function toGeometrySpecificationProposal(
     // already renders next to the approval outcome, not tucked inside prose
     // the eye skips.
     warnings: [...specification.warnings, ...complianceWarnings(compliance)],
-    expectedOutcome: EXPECTED_OUTCOME
+    expectedOutcome: EXPECTED_OUTCOME,
+    // ArchiSimple Sprint 038.0 — ADR-0035 §7, Rule 5. A minimal, kind-agnostic
+    // fact ai-engine can gate approval on, computed once, here, where
+    // SpecificationCompliance is already in hand. Never `ConstraintResult`,
+    // `SpecificationCompliance` or `SpaceConstraint` itself — the platform's
+    // `requiresConfirmation`/`requiresComplianceConfirmation` are not allowed
+    // to depend on this repository's or `@archisimple/skills`' vocabulary.
+    compliance: toComplianceSignal(compliance)
   });
+}
+
+/**
+ * `evaluated: false` and `requiredFailures: 0` are different facts (Sprint
+ * 038.0): the first means nothing was checked yet — `compliance` is
+ * `undefined`, as it is for every artefact kind above this one — the second
+ * means every `required` constraint passed.
+ */
+function toComplianceSignal(
+  compliance: SpecificationCompliance | undefined
+): ProposalComplianceSignal {
+  return {
+    evaluated: compliance !== undefined,
+    requiredFailures: compliance?.summary.byStrength.required.failed ?? 0
+  };
 }
 
 /**

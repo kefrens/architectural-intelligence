@@ -31,6 +31,7 @@ import {
   createSkillContext,
   resolveAdjacencies,
   scoreCirculation,
+  STOREY_PRECONDITIONS,
   type LayoutSpaceInput,
   type StoreyAssignment
 } from '@archisimple/skills';
@@ -42,6 +43,7 @@ import {
 import {
   circulationNodeId,
   createLayoutPlan,
+  storeyPreconditionOf,
   LAYOUT_EDGE_KINDS,
   LAYOUT_NODE_KINDS,
   storeyName,
@@ -85,15 +87,33 @@ function circulationSpaceIds(programme: SpaceProgramme): readonly string[] {
 /**
  * The planning graph.
  *
- * One node per space, one synthetic circulation node per storey, and four kinds
- * of edge:
+ * One node per space, one synthetic circulation node per storey, and edges only
+ * where something established them:
  *
- * - every space is `connected` to the circulation of each storey it occupies —
- *   which is what "you can get to it" means without coordinates;
- * - a satisfied intent becomes `adjacent`, an `avoid` becomes `separated`;
+ * - an intent the storeys have **not** ruled out becomes `adjacent` — the
+ *   arrangement to aim for, not a claim that it happened;
+ * - an `avoid` becomes `separated`;
  * - consecutive storeys are joined by `vertical-connection`, but **only** when a
  *   space actually occupies both. A vertical edge with no staircase behind it
  *   would be a graph asserting something the building does not contain.
+ *
+ * ## Why no space is joined to circulation here (Sprint 1.8, BUG-011)
+ *
+ * It used to be. Every space got a `connected` edge to its storey's circulation
+ * node, unconditionally, on the reasoning that this is what "you can get to it"
+ * means without coordinates. It is not: it is what *hoping* you can get to it
+ * means. The graph asserted total connectivity for any programme whatsoever, so
+ * a bedroom with no doorway to the hallway was structurally indistinguishable
+ * from one with a door.
+ *
+ * ADR-0034 §10 forbids exactly that — "a planning graph SHALL NOT assert a
+ * relationship it did not establish" — and a Layout Plan has no openings with
+ * which to establish one. Reachability is established at the Geometry
+ * Specification, where doors exist, and answered by `constraints.evaluate`.
+ *
+ * The vertical-connection edges stay: they were already conditional, on a space
+ * actually occupying both storeys, which is the standard the circulation edges
+ * failed to meet.
  *
  * Nodes are emitted in the stated total order, then circulation nodes by storey,
  * so the graph is byte-identical across runs.
@@ -118,16 +138,6 @@ function buildGraph(
 
   const edges: LayoutEdge[] = [];
 
-  for (const space of spaces) {
-    for (const storey of space.storeys) {
-      edges.push({
-        fromNodeId: space.id,
-        toNodeId: circulationNodeId(storey),
-        kind: LAYOUT_EDGE_KINDS.Connected
-      });
-    }
-  }
-
   for (const adjacency of adjacencies) {
     if (adjacency.relation === LAYOUT_EDGE_KINDS.Separated) {
       edges.push({
@@ -137,7 +147,11 @@ function buildGraph(
       });
       continue;
     }
-    if (adjacency.satisfied) {
+    // An intent the storeys ruled out gets no edge — the arrangement cannot
+    // happen. One they have not ruled out gets an `adjacent` edge, which is the
+    // target Geometry Synthesis places against, and is not a claim that the two
+    // rooms touch (ADR-0034 §6 protects `LAYOUT_EDGE_KINDS`' existing meanings).
+    if (storeyPreconditionOf(adjacency) !== STOREY_PRECONDITIONS.Impossible) {
       edges.push({
         fromNodeId: adjacency.fromSpaceId,
         toNodeId: adjacency.toSpaceId,
@@ -182,14 +196,36 @@ function buildCirculation(
   const named = (ids: readonly string[]): string =>
     ids.map((id) => spaces.find((space) => space.id === id)?.name ?? id).join(', ');
 
-  const description =
-    programme.storeys === 1
-      ? `Every space opens off the ${named(perStorey[0]?.circulationSpaceIds ?? []) || 'entrance'}.`
-      : vertical.length > 0
-        ? `${capitalize(named(vertical))} connects all ${programme.storeys} storeys; each floor is served from it.`
-        : `No space connects the storeys, so the floors are only planned separately.`;
+  return { verticalSpaceIds: vertical, perStorey, unservedStoreys, description: describe() };
 
-  return { verticalSpaceIds: vertical, perStorey, unservedStoreys, description };
+  /**
+   * What circulation this plan *contains* — never what it achieves.
+   *
+   * This sentence used to read `Every space opens off the ${…}.` for **every**
+   * single-storey plan, unconditionally, and BUG-011 records a user reading it
+   * as an approved programme requirement. It was neither: the system never held
+   * that requirement and never tested it, and printed a sentence that reads
+   * exactly like one (ADR-0034 §10 — "a generated summary is a claim").
+   *
+   * What replaces it names the circulation spaces and stops. Whether every space
+   * can actually reach one is `constraints.evaluate`'s answer, at the stage where
+   * doorways exist, and it is reported where it is established rather than
+   * asserted here where it is not.
+   */
+  function describe(): string {
+    if (programme.storeys === 1) {
+      const here = named(perStorey[0]?.circulationSpaceIds ?? []);
+      return here.length === 0
+        ? 'This storey has no hallway or landing.'
+        : `${capitalize(here)} serves this storey.`;
+    }
+
+    if (vertical.length > 0) {
+      return `${capitalize(named(vertical))} runs through all ${programme.storeys} storeys.`;
+    }
+
+    return 'No space connects the storeys, so the floors are only planned separately.';
+  }
 }
 
 /**
@@ -260,7 +296,10 @@ export function synthesizeLayout(options: SynthesizeLayoutOptions): LayoutSynthe
     fromSpaceId: relation.fromSpaceId,
     toSpaceId: relation.toSpaceId,
     relation: relation.relation,
-    satisfied: relation.satisfied,
+    // What the storeys establish, carried through unchanged. There is no
+    // `satisfied` to carry: ADR-0034 §4.1a superseded it, and this stage has
+    // nothing with which to decide one.
+    storeyPrecondition: relation.storeyPrecondition,
     strength: relation.strength,
     reason: relation.reason
   }));
@@ -287,10 +326,15 @@ export function synthesizeLayout(options: SynthesizeLayoutOptions): LayoutSynthe
 
   const warnings: string[] = [];
 
-  // An unsatisfied *required* adjacency is the one thing a reviewer most needs
-  // told: the arrangement contradicts something they approved.
+  // A *required* adjacency the storeys have ruled out is the one thing a
+  // reviewer most needs told, and the one thing this stage can establish: the
+  // arrangement contradicts something they approved, and no later geometry can
+  // rescue it. Everything else is undecided and is not warned about — a warning
+  // is a claim too (ADR-0034 §10).
   const brokenRequirements = adjacencies.filter(
-    (adjacency) => adjacency.strength === 'required' && !adjacency.satisfied
+    (adjacency) =>
+      adjacency.strength === 'required' &&
+      storeyPreconditionOf(adjacency) === STOREY_PRECONDITIONS.Impossible
   );
   for (const broken of brokenRequirements) {
     const from =

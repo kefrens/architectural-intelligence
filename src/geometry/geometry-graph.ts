@@ -101,12 +101,40 @@ export interface OpeningCandidate {
  * as adjacent, and the packer may still have failed to place them side by side.
  * Recording that rather than dropping it is `I3`.
  */
+/**
+ * One relation the Layout resolved, carried forward with the geometric fact this
+ * stage established about it.
+ *
+ * ## `sharesWall` is a fact, not a verdict (Sprint 1.8, ADR-0034 §4)
+ *
+ * It was `satisfied: boolean`, computed here from whether the packer put a wall
+ * between the two rooms. That computation is *correct* — it reads real shared
+ * edges, not a storey comparison — and it was still a second satisfaction
+ * authority, which ADR-0034 §4 forbids by name in "geometry generation".
+ *
+ * So the fact stays and the verdict goes. Whether two rooms share a wall is
+ * exactly what geometry synthesis needs in order to *choose where a door can
+ * go*, and it goes on being used for that. Whether that satisfies what the
+ * programme asked for is `constraints.evaluate`'s answer, and it is asked at the
+ * Geometry Specification, where openings exist and the question is decidable.
+ *
+ * The rename is the whole guard: a field called `satisfied` invites a reader to
+ * treat it as one, and Sprint 1.8's standing prohibition is that no quality
+ * authority returns under another name.
+ */
 export interface GeometryAdjacency {
   readonly fromSpaceId: string;
   readonly toSpaceId: string;
   readonly strength: string;
   readonly relation: string;
-  readonly satisfied: boolean;
+  /**
+   * Whether the packer placed these two rooms sharing a wall.
+   *
+   * A generation fact and a candidate input. Never satisfaction — an `avoid`
+   * that shares no wall is *not* thereby honoured, because two rooms can be
+   * apart in the packing and joined by a door in the Specification.
+   */
+  readonly sharesWall: boolean;
   readonly reason: string;
 }
 

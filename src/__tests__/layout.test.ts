@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { STOREY_PRECONDITIONS } from '@archisimple/skills';
 import { ArchitecturalIntelligenceService } from '../architectural-intelligence-service.js';
 import { createInMemoryPlanningArtefactReader } from '../artefacts/planning-artefact-reader.js';
 import {
@@ -20,7 +21,9 @@ import {
   type ArchitecturalBrief
 } from '../brief/index.js';
 import {
-  computeLayoutQuality,
+  computeLayoutSummary,
+  describeLayoutSummary,
+  storeyPreconditionOf,
   LAYOUT_EDGE_KINDS,
   LAYOUT_NODE_KINDS,
   LAYOUT_PLAN_KIND,
@@ -250,21 +253,29 @@ describe('the planning graph', () => {
     expect(circulationNodes).toHaveLength(plan.storeys);
   });
 
-  it('connects every space to the circulation of each storey it occupies', () => {
+  /**
+   * **Inverted in Sprint 1.8.** This test used to assert the opposite — that
+   * every space is joined to its storey's circulation node — and that assertion
+   * was BUG-011's fourth mechanism written down as intended behaviour.
+   *
+   * The graph attached the edge unconditionally, so it asserted total
+   * connectivity for any programme whatsoever, and a bedroom with no doorway to
+   * the hallway was structurally indistinguishable from one with a door.
+   * ADR-0034 §10: a planning graph SHALL NOT assert a relationship it did not
+   * establish, and a Layout Plan has no openings with which to establish one.
+   */
+  it('joins no space to circulation, because nothing here establishes that it can', () => {
     const plan = layoutFor(TWO_STOREY);
 
-    for (const space of plan.spaces) {
-      for (const storey of space.storeys) {
-        expect(
-          plan.graph.edges.some(
-            (edge) =>
-              edge.fromNodeId === space.id &&
-              edge.toNodeId === `circulation:${storey}` &&
-              edge.kind === LAYOUT_EDGE_KINDS.Connected
-          )
-        ).toBe(true);
-      }
-    }
+    const toCirculation = plan.graph.edges.filter((edge) =>
+      edge.toNodeId.startsWith('circulation:')
+    );
+
+    // The only edges that reach a circulation node are the vertical ones between
+    // two of them, and those are conditional on a space occupying both storeys.
+    expect(toCirculation.every((edge) => edge.kind === LAYOUT_EDGE_KINDS.VerticalConnection)).toBe(
+      true
+    );
   });
 
   it('joins consecutive storeys only when a space actually occupies both', () => {
@@ -352,22 +363,32 @@ describe('functional resolution', () => {
     expect(result.plan.adjacencies).toHaveLength(programme.adjacencies.length);
   });
 
-  it('satisfies every intent in an ordinary two-storey home', () => {
+  it('rules out no intent in an ordinary two-storey home', () => {
     // Not a lucky accident: the programme zones spaces the same way the layout
     // assigns storeys, so day-with-day and night-with-night intents land on a
     // common floor by construction. A regression here means the two rules have
     // drifted apart.
     const plan = layoutFor(TWO_STOREY);
 
-    expect(plan.adjacencies.every((adjacency) => adjacency.satisfied)).toBe(true);
+    // Sprint 1.8: not "satisfied" — a Layout Plan cannot establish that. What it
+    // can establish is that nothing is *ruled out*, which is the authoritative
+    // half of the storey rule (ADR-0034 §4.1a).
+    expect(
+      plan.adjacencies.every(
+        (adjacency) => storeyPreconditionOf(adjacency) !== STOREY_PRECONDITIONS.Impossible
+      )
+    ).toBe(true);
     expect(plan.warnings).toEqual([]);
   });
 
-  it('records a cross-zone intent as unsatisfied rather than dropping it', () => {
+  it('records a cross-zone intent as ruled out rather than dropping it', () => {
     const plan = crossStoreyLayout();
-    const unsatisfied = plan.adjacencies.filter((adjacency) => !adjacency.satisfied);
+    const ruledOut = plan.adjacencies.filter(
+      (adjacency) => storeyPreconditionOf(adjacency) === STOREY_PRECONDITIONS.Impossible
+    );
 
-    expect(unsatisfied).toHaveLength(1);
+    expect(ruledOut).toHaveLength(1);
+    const unsatisfied = ruledOut;
     expect(unsatisfied[0]).toMatchObject({ strength: 'required', relation: 'connected' });
     // The reason survives from the programme, so the card explains what was lost.
     expect(unsatisfied[0]!.reason).toMatch(/deliveries/i);
@@ -397,42 +418,77 @@ describe('functional resolution', () => {
   });
 });
 
-// --- Epic 4 — layout quality (Story 28.0.4) ---------------------------------
+// --- Epic 4 — the layout summary (Story 28.0.4; rewritten Sprint 1.8) -------
 
-describe('layout quality', () => {
+describe('layout summary', () => {
   it('is not stored in the artefact', () => {
     expect(Object.keys(layoutFor(TWO_STOREY))).not.toContain('quality');
+    expect(Object.keys(layoutFor(TWO_STOREY))).not.toContain('summary');
   });
 
-  it('is recomputed from the plan, and every metric is a share', () => {
-    const quality = computeLayoutQuality(layoutFor(TWO_STOREY));
+  /**
+   * **Rewritten in Sprint 1.8.** It asserted that every metric was a share
+   * between 0 and 1, and that two of them were exactly 1 — which is the shape
+   * BUG-011 rendered as four 100% lines. There are no shares now, and the test
+   * asserts the opposite property: every number here shows its denominator.
+   */
+  it('is recomputed from the plan, and no metric is a bare share', () => {
+    const summary = computeLayoutSummary(layoutFor(TWO_STOREY));
 
-    for (const value of Object.values(quality)) {
-      expect(value).toBeGreaterThanOrEqual(0);
-      expect(value).toBeLessThanOrEqual(1);
-    }
-    expect(quality.programmeSatisfaction).toBe(1);
-    expect(quality.circulationQuality).toBe(1);
+    expect(summary.programme).toMatchObject({
+      required: expect.any(Number),
+      kept: expect.any(Number)
+    });
+    expect(summary.requiredAdjacencies.stated).toBeGreaterThan(0);
+    expect(summary.circulation).toMatchObject({ storeys: 2, withCirculation: 2 });
+
+    // Nothing in the output is a 0–1 fraction that could be rendered as a
+    // percentage of satisfaction.
+    expect(summary).not.toHaveProperty('programmeSatisfaction');
+    expect(summary).not.toHaveProperty('requiredAdjacencySatisfaction');
+    expect(summary).not.toHaveProperty('circulationQuality');
   });
 
-  it('reflects a change to the plan, which a stored score could not', () => {
+  it('reports every constraint as not-applicable, because the stage cannot decide one', () => {
+    const summary = computeLayoutSummary(layoutFor(TWO_STOREY));
+
+    expect(summary.constraints.evaluatedStage).toBe('layout');
+    expect(summary.constraints.total.stated).toBeGreaterThan(0);
+    expect(summary.constraints.total.evaluated).toBe(0);
+    expect(summary.constraints.total.notApplicable).toBe(summary.constraints.total.stated);
+  });
+
+  it('reflects a change to the plan, which a stored count could not', () => {
     const plan = layoutFor(TWO_STOREY);
-    const enriched: LayoutPlan = {
+    const ruledOut: LayoutPlan = {
       ...plan,
-      adjacencies: plan.adjacencies.map((adjacency) => ({ ...adjacency, satisfied: false }))
+      adjacencies: plan.adjacencies.map((adjacency) => ({
+        ...adjacency,
+        storeyPrecondition: STOREY_PRECONDITIONS.Impossible
+      }))
     };
 
-    expect(computeLayoutQuality(enriched).requiredAdjacencySatisfaction).toBeLessThan(
-      computeLayoutQuality(plan).requiredAdjacencySatisfaction + 0.0001
+    expect(computeLayoutSummary(ruledOut).requiredAdjacencies.impossible).toBeGreaterThan(
+      computeLayoutSummary(plan).requiredAdjacencies.impossible
     );
-    expect(computeLayoutQuality(enriched).requiredAdjacencySatisfaction).toBe(0);
+    expect(computeLayoutSummary(ruledOut).requiredAdjacencies.undecided).toBe(0);
+  });
+
+  it('claims nothing, in words', () => {
+    const rendered = describeLayoutSummary(computeLayoutSummary(layoutFor(TWO_STOREY)));
+
+    expect(rendered).toContain('Not yet checked');
+    expect(rendered).not.toMatch(/satisfied|\bmet\b|%/i);
   });
 
   it('never blocks approval', () => {
     const plan = layoutFor(TWO_STOREY);
     const poor: LayoutPlan = {
       ...plan,
-      adjacencies: plan.adjacencies.map((adjacency) => ({ ...adjacency, satisfied: false }))
+      adjacencies: plan.adjacencies.map((adjacency) => ({
+        ...adjacency,
+        storeyPrecondition: STOREY_PRECONDITIONS.Impossible
+      }))
     };
 
     expect(() => toLayoutProposal(poor)).not.toThrow();
@@ -495,8 +551,17 @@ describe('layout review', () => {
     expect(proposal.approvalState).toBe('pending');
   });
 
-  it('shows the quality it computed', () => {
-    expect(toLayoutProposal(layoutFor(TWO_STOREY)).explanation).toMatch(/Programme satisfied/i);
+  /**
+   * **Rewritten in Sprint 1.8.** It asserted `/Programme satisfied/i` — the
+   * first of BUG-011's four false lines. The card now states what the layout
+   * contains and says plainly that nothing has been checked.
+   */
+  it('shows what it counted, and claims nothing', () => {
+    const explanation = toLayoutProposal(layoutFor(TWO_STOREY)).explanation;
+
+    expect(explanation).toMatch(/What this layout contains/i);
+    expect(explanation).toMatch(/Not yet checked/i);
+    expect(explanation).not.toMatch(/Programme satisfied|adjacencies met|100%/i);
   });
 
   it('refuses to propose an empty layout', () => {

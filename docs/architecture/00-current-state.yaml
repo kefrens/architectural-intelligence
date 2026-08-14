@@ -353,7 +353,16 @@ artefacts:
       synthesizedBy: src/layout/layout-synthesis.ts
       provenance:
         { field: sourceProgramme, type: ProgrammeProvenance, staleCheck: matchesProgramme }
-      derivedNotStored: { what: LayoutQuality, computedBy: computeLayoutQuality }
+      derivedNotStored: { what: LayoutSummary, computedBy: computeLayoutSummary }
+      # Sprint 1.8, ArchiSimple ADR-0034 §4.1a. `satisfied` is gone: it meant
+      # "the two spaces share a storey", which on one storey cannot fail.
+      # `storeyPrecondition` says only what the storeys establish, and its
+      # `impossible` half is the only authoritative one.
+      resolvedAdjacency:
+        field: storeyPrecondition
+        values: [possible, impossible, unknown-space, not-constraining]
+        supersedes: satisfied
+        legacyReadsAs: unknown-space # an approved plan written before 1.8
     - kind: geometry-graph
       type: GeometryGraph
       sprint: 28.1a
@@ -483,7 +492,16 @@ skillsUsage:
     - { skill: allocateSpaceAreas, usedBy: src/programme/programme-synthesis.ts }
     - { skill: assignStoreys, usedBy: src/layout/layout-synthesis.ts }
     - { skill: resolveAdjacencies, usedBy: src/layout/layout-synthesis.ts }
-    - { skill: scoreCirculation, usedBy: src/layout/layout-quality.ts }
+    - { skill: scoreCirculation, usedBy: src/layout/layout-summary.ts }
+    - { skill: scoreLayout, usedBy: src/layout/layout-summary.ts }
+    # Sprint 1.8 — the authoritative constraint evaluator (ArchiSimple ADR-0034).
+    # The single satisfaction authority; this layer builds input and renders
+    # results, and computes no verdict anywhere.
+    - {
+        skill: evaluateConstraints,
+        usedBy: 'src/layout/layout-summary.ts, src/geometry/specification-compliance.ts'
+      }
+    - { skill: summariseConstraintResults, usedBy: 'layout summary, specification compliance' }
     - { skill: compareLayoutSpaces, usedBy: src/layout/layout-synthesis.ts }
     - { skill: packLayout, usedBy: src/geometry/geometry-synthesis.ts }
     - { skill: evaluatePacking, usedBy: src/geometry/geometry-evaluation.ts }
@@ -758,3 +776,45 @@ needsVerification:
   - whether apps/web is currently composing this package at 0.1.1 or an earlier published version
   - the exact set of ArchiSimple sprint documents that should be mirrored or referenced here
   - whether `@archisimple/inspector` being optional is exercised by any consumer
+
+# Constraint evaluation, as this layer consumes it (Sprint 1.8, ArchiSimple ADR-0034).
+constraintEvaluation:
+  sprint: 1.8
+  adr: ADR-0034 # ArchiSimple's, unmodified by this sprint
+  authority: constraints.evaluate # in @archisimple/skills; there is exactly one
+  computesNoVerdict: true
+  adapter: src/constraints/constraint-adapter.ts
+  # Q2, fixed at review. One intent produces exactly one constraint.
+  relationForStrength:
+    required: traversable-connection
+    avoid: traversable-connection
+    preferred: adjacent
+  circulationReachability:
+    statedPerSpace: true
+    rootsFrom: FUNCTIONAL_ZONES.Circulation
+    derivesEntrance: false
+  stages:
+    layout:
+      answers: not-applicable # every relation; the stage carries no geometry
+      renderedBy: describeLayoutSummary
+      claimsSatisfaction: false
+    geometry-specification:
+      answers: pass/fail
+      factsFrom:
+        adjacent: SpecifiedWall.separates # polygon ids, translated to space ids
+        traversable-connection: SpecifiedOpening.connects # space ids already
+      renderedBy: describeSpecificationCompliance
+  # Sprint 1.8 removed every share from this layer's summaries. Nothing below
+  # reports a percentage, and the standing prohibition covers renames.
+  removed:
+    - { what: LayoutQuality, was: four 0-1 shares rendered as percentages }
+    - { what: computeLayoutQuality, replacedBy: computeLayoutSummary }
+    - { what: describeLayoutQuality, replacedBy: describeLayoutSummary }
+    - { what: ResolvedAdjacency.satisfied, replacedBy: storeyPrecondition }
+    - {
+        what: GeometryAdjacency.satisfied,
+        replacedBy: sharesWall,
+        note: 'a generation fact, never a verdict'
+      }
+    - { what: unconditional circulation edges in buildGraph }
+    - { what: '"Every space opens off the …" in buildCirculation' }

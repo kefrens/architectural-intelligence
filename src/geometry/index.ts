@@ -15,6 +15,13 @@ export {
 } from './geometry-graph.js';
 
 export {
+  describeSpecificationCompliance,
+  evaluateSpecification,
+  type EvaluateSpecificationInput,
+  type SpecificationCompliance
+} from './specification-compliance.js';
+
+export {
   describeEvaluation,
   evaluateGeometryGraph,
   type EvaluateGeometryGraphOptions

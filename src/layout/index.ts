@@ -8,6 +8,7 @@ export {
   matchesProgramme,
   reviseLayoutPlan,
   storeyName,
+  storeyPreconditionOf,
   summarizeLayoutPlan,
   type CirculationStrategy,
   type LayoutEdge,
@@ -28,9 +29,9 @@ export {
 } from './layout-synthesis.js';
 
 export {
-  computeLayoutQuality,
-  describeLayoutQuality,
-  type LayoutQuality
-} from './layout-quality.js';
+  computeLayoutSummary,
+  describeLayoutSummary,
+  type LayoutSummary
+} from './layout-summary.js';
 
 export { describeLayout, toLayoutProposal } from './layout-proposal.js';

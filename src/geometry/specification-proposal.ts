@@ -22,6 +22,10 @@
 import { createArtefactProposal, type Proposal } from '@archisimple/ai-engine';
 import { contributionNotes } from '../artefacts/enriched-artefact.js';
 import {
+  describeSpecificationCompliance,
+  type SpecificationCompliance
+} from './specification-compliance.js';
+import {
   GEOMETRY_SPECIFICATION_KIND,
   isGeometrySpecificationComplete,
   summarizeGeometrySpecification,
@@ -32,7 +36,15 @@ const EXPECTED_OUTCOME =
   'The specification is recorded with the project. Nothing is built from it here: turning it into walls belongs to the application that consumes it.';
 
 export function toGeometrySpecificationProposal(
-  specification: GeometrySpecification
+  specification: GeometrySpecification,
+  /**
+   * The evaluator's verdict on this Specification (Sprint 1.8).
+   *
+   * Optional so a caller with no Programme to check against still gets a
+   * proposal — and **absent means the card says nothing about compliance**,
+   * never that it complied.
+   */
+  compliance?: SpecificationCompliance
 ): Proposal {
   if (!isGeometrySpecificationComplete(specification)) {
     throw new Error('An empty geometry specification cannot be proposed for approval.');
@@ -49,7 +61,10 @@ export function toGeometrySpecificationProposal(
       specification.revision === 1
         ? 'Geometry specification'
         : `Geometry specification (revision ${specification.revision})`,
-    explanation: summarizeGeometrySpecification(specification),
+    explanation:
+      compliance === undefined
+        ? summarizeGeometrySpecification(specification)
+        : `${summarizeGeometrySpecification(specification)}\n\n${describeSpecificationCompliance(compliance)}`,
     reasoning:
       'This gives the approved geometry real walls — thickness, height and openings — so the design is complete enough for a CAD application to build without deciding anything further.',
     // Sprint 28.3: what an installed extension added is named beside what the

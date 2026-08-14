@@ -222,13 +222,13 @@ describe('wall and opening candidates', () => {
     expect(external).toHaveLength(4 * graph.storeys);
   });
 
-  it('emits an opening only where a satisfied adjacency needs passage', () => {
+  it('emits an opening only where two rooms share a wall to pass through', () => {
     const graph = geometryFrom(layoutFor(TWO_STOREY));
-    const satisfied = graph.adjacencies.filter(
-      (adjacency) => adjacency.strength !== 'avoid' && adjacency.satisfied
+    const sharing = graph.adjacencies.filter(
+      (adjacency) => adjacency.strength !== 'avoid' && adjacency.sharesWall
     );
 
-    expect(graph.openingCandidates).toHaveLength(satisfied.length);
+    expect(graph.openingCandidates).toHaveLength(sharing.length);
     for (const opening of graph.openingCandidates) {
       expect(
         graph.wallCandidates.some((candidate) => candidate.id === opening.wallCandidateId)

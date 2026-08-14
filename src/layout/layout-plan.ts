@@ -44,6 +44,7 @@
  */
 
 import { createUuid } from '@archisimple/shared';
+import { STOREY_PRECONDITIONS, type StoreyPrecondition } from '@archisimple/skills';
 import type { EnrichedArtefact } from '../artefacts/enriched-artefact.js';
 import type { FunctionalZone, SpacePriority } from '../programme/space-programme.js';
 
@@ -135,20 +136,57 @@ export interface PlanningGraph {
 /**
  * One intended relationship, resolved.
  *
- * `satisfied` is the whole point: an intent the arrangement could not honour is
- * recorded as unsatisfied rather than dropped, so the Programme's requirement
- * survives into the artefact that failed to meet it and the metrics can count
- * it.
+ * Nothing is dropped: an intent this stage cannot honour survives into the
+ * artefact that failed to meet it, so the Programme's requirement is still
+ * visible where it was lost.
+ *
+ * ## There is no `satisfied` (Sprint 1.8, ArchiSimple ADR-0034 §4.1a)
+ *
+ * There was, and it meant "the two spaces share a storey". On a single-storey
+ * building every pair shares storey 0, so every required and preferred intent
+ * resolved satisfied whatever the arrangement — a necessary condition reported
+ * as a sufficient one, and the first of BUG-011's four mechanisms.
+ *
+ * What replaces it says only what the storeys establish. Whether an intent is
+ * *met* is `constraints.evaluate`'s answer, at a stage that has boundaries and
+ * openings to look at — which the Layout Plan does not.
  */
 export interface ResolvedAdjacency {
   readonly fromSpaceId: string;
   readonly toSpaceId: string;
   readonly relation: LayoutEdgeKind;
-  readonly satisfied: boolean;
+  /**
+   * What the storey assignment alone establishes, mirroring the platform's
+   * `StoreyPrecondition` rather than inventing a second vocabulary.
+   *
+   * The asymmetry is the point: `impossible` is authoritative — two spaces on
+   * different floors cannot share a boundary, whatever geometry follows — while
+   * `possible` decides nothing at all.
+   *
+   * Optional because an approved plan written before Sprint 1.8 does not carry
+   * it (ADR-0027.1 Rule 4 makes approved artefacts immutable). Absent reads as
+   * {@link storeyPreconditionOf}'s `unknown-space`: honest for a plan whose
+   * `satisfied` claim this sprint decided not to trust.
+   */
+  readonly storeyPrecondition?: StoreyPrecondition;
   /** The intended strength this resolves — `required`, `preferred` or `avoid`. */
   readonly strength: string;
   /** Carried from the intent, so the review card explains *why* this mattered. */
   readonly reason: string;
+}
+
+/**
+ * Reads {@link ResolvedAdjacency.storeyPrecondition}, including from a plan that
+ * predates it.
+ *
+ * A pre-Sprint-1.8 artefact carries `satisfied` instead, and that boolean is
+ * exactly the claim ADR-0034 §4.1a superseded — so it is **not** translated into
+ * a precondition. `unknown-space` is what "we no longer trust what this said"
+ * looks like in the current vocabulary, and every reader treats it as
+ * undecided rather than as a failure.
+ */
+export function storeyPreconditionOf(adjacency: ResolvedAdjacency): StoreyPrecondition {
+  return adjacency.storeyPrecondition ?? STOREY_PRECONDITIONS.UnknownSpace;
 }
 
 export interface CirculationStrategy {
@@ -291,10 +329,16 @@ export function summarizeLayoutPlan(plan: LayoutPlan): string {
     lines.push('');
   }
 
-  const unsatisfied = plan.adjacencies.filter((adjacency) => !adjacency.satisfied);
-  if (unsatisfied.length > 0) {
-    lines.push('**Could not be placed together**');
-    for (const adjacency of unsatisfied) {
+  // The authoritative half of the storey rule, and the only half: two spaces on
+  // different floors cannot share a boundary, whatever geometry follows. What is
+  // *not* listed here is everything still undecided — a plan cannot yet say
+  // whether the rest were honoured (ADR-0034 §4.1a).
+  const ruledOut = plan.adjacencies.filter(
+    (adjacency) => storeyPreconditionOf(adjacency) === STOREY_PRECONDITIONS.Impossible
+  );
+  if (ruledOut.length > 0) {
+    lines.push('**Cannot be placed together**');
+    for (const adjacency of ruledOut) {
       const from = spaceName(plan, adjacency.fromSpaceId);
       const to = spaceName(plan, adjacency.toSpaceId);
       lines.push(`- ${from} ↔ ${to} — ${adjacency.reason}`);

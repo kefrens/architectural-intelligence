@@ -140,6 +140,7 @@ import {
   reviseGeometryGraph,
   reviseGeometrySpecification,
   synthesizeGeometry,
+  evaluateSpecification,
   synthesizeSpecification,
   toGeometryGraphProposal,
   toGeometrySpecificationProposal,
@@ -645,10 +646,27 @@ export class ArchitecturalIntelligenceService {
       return { intent, message: gate.message };
     }
 
+    // Sprint 1.8. The first stage that can answer whether the design satisfies
+    // what the programme asked for, so it is the first that says so — and it
+    // says it only because `constraints.evaluate` established it (ADR-0034 §4).
+    //
+    // The intents and the zones come from the approved Layout, which carries
+    // both. Without one there is nothing to check against, and the card reports
+    // no compliance rather than reporting compliance.
+    const layout = this.approvedLayout();
+    const compliance =
+      layout === undefined
+        ? undefined
+        : evaluateSpecification({
+            specification,
+            intents: layout.adjacencies,
+            spaces: layout.spaces
+          });
+
     return {
       intent,
       message: describeSpecification(specification),
-      proposal: toGeometrySpecificationProposal(specification),
+      proposal: toGeometrySpecificationProposal(specification, compliance),
       specification
     };
   }

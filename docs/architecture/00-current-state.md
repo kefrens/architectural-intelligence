@@ -330,14 +330,27 @@ space and circulation nodes joined by `adjacent`, `connected`, `separated` and
 `vertical-connection` edges, plus storey assignment.
 
 It **resolves**; it does not redesign. No space is added, removed, resized,
-renamed or re-zoned here. When an approved adjacency cannot be satisfied, it
-records `satisfied: false` and a warning rather than dropping the requirement
-quietly.
+renamed or re-zoned here. An intent the arrangement cannot honour is recorded
+rather than dropped quietly.
 
-Storey assignment, adjacency resolution and circulation scoring all live in
-`@archisimple/skills`. `LayoutQuality` is computed on demand by
-`computeLayoutQuality` and **never stored** — a verdict written into an artefact
-is stale the moment a later revision lands.
+**It claims no satisfaction** (Sprint 1.8, ArchiSimple ADR-0034 §4.1a). It used
+to: `ResolvedAdjacency.satisfied` meant "the two spaces share a storey", so on a
+single-storey building every intent resolved satisfied whatever the arrangement,
+and BUG-011 is a user reading that as a promise. `storeyPrecondition` replaces
+it and says only what the storeys establish — of which exactly one half is
+authoritative: `impossible` means two spaces on different floors cannot share a
+boundary, whatever geometry follows, while `possible` decides nothing at all.
+
+The planning graph asserts no circulation edges either. It attached every space
+to its storey's circulation node unconditionally, which made a bedroom with no
+doorway structurally indistinguishable from one with a door — and ADR-0034 §10
+forbids a graph asserting a relationship it did not establish.
+
+Storey assignment, adjacency resolution and circulation coverage all live in
+`@archisimple/skills`. `LayoutSummary` is computed on demand by
+`computeLayoutSummary` and **never stored** — anything written into an artefact
+is stale the moment a later revision lands. It carries counts with their
+denominators visible and **no share of any kind**.
 
 ## Geometry Graph (Sprint 28.1a)
 
@@ -771,24 +784,63 @@ Deterministic computation belongs to `@archisimple/skills`, and this layer is
 its first consumer. No stage re-implements geometry, unit or spatial maths, and
 no stage asks a language model to perform it.
 
-| Skill                 | Called by                                       |
-| --------------------- | ----------------------------------------------- |
-| `allocateSpaceAreas`  | Space Programme synthesis                       |
-| `assignStoreys`       | Layout synthesis                                |
-| `resolveAdjacencies`  | Layout synthesis                                |
-| `compareLayoutSpaces` | Layout synthesis                                |
-| `scoreCirculation`    | Layout quality                                  |
-| `packLayout`          | Geometry synthesis                              |
-| `evaluatePacking`     | Geometry evaluation, and the invariant gate     |
-| `sharedPolygonEdges`  | Geometry synthesis                              |
-| `insertWallThickness` | Specification synthesis — thickness, per storey |
-| `mergeColinearRuns`   | Specification synthesis — segments into walls   |
-| `findJunctions`       | Specification synthesis and validation          |
+| Skill                 | Called by                                                                    |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `allocateSpaceAreas`  | Space Programme synthesis                                                    |
+| `assignStoreys`       | Layout synthesis                                                             |
+| `resolveAdjacencies`  | Layout synthesis                                                             |
+| `compareLayoutSpaces` | Layout synthesis                                                             |
+| `scoreCirculation`    | Layout summary — storey coverage, not reachability                           |
+| `scoreLayout`         | Layout summary — counts, with denominators                                   |
+| `evaluateConstraints` | **The satisfaction authority** — layout summary and specification compliance |
+| `packLayout`          | Geometry synthesis                                                           |
+| `evaluatePacking`     | Geometry evaluation, and the invariant gate                                  |
+| `sharedPolygonEdges`  | Geometry synthesis                                                           |
+| `insertWallThickness` | Specification synthesis — thickness, per storey                              |
+| `mergeColinearRuns`   | Specification synthesis — segments into walls                                |
+| `findJunctions`       | Specification synthesis and validation                                       |
 
-The balance shifts downward over time on purpose. `computeLayoutQuality` still
-does real work above the skill; `evaluateGeometryGraph` does almost none, because
-the packing rules are exported as a conformance suite a plugin author can test
-against without depending on this package at all.
+The balance shifts downward over time on purpose, and Sprint 1.8 moved the last
+judgement down with it: `computeLayoutSummary` and `describeSpecificationCompliance`
+now _render_ what `constraints.evaluate` decided, where `computeLayoutQuality`
+used to compute four shares of its own. `evaluateGeometryGraph` does almost
+nothing either, because the packing rules are exported as a conformance suite a
+plugin author can test against without depending on this package at all.
+
+## Constraint evaluation (Sprint 1.8, ArchiSimple ADR-0034)
+
+**This layer proposes intent; ArchiSimple evaluates reality.** `src/constraints/`
+is the seam: it turns `IntendedAdjacency` into the platform's `SpaceConstraint`
+and hands it to `constraints.evaluate`, which is the single authority ADR-0034 §4
+requires. Nothing here computes a verdict.
+
+One intent becomes exactly one constraint. `required` and `avoid` become
+`traversable-connection` — the strengths ADR-AI-0003 Rule 3 reserves for what a
+user stated, whose reasons are about passage — and `preferred` becomes
+`adjacent`, which is the weaker wish it sounds like.
+
+Circulation reachability is stated once per non-circulation space, rooted at the
+Programme's own circulation zoning. **No `Entrance` concept exists or is needed**:
+BUG-011 asks whether each room reaches the hallway, not whether you can get into
+the building.
+
+| Stage                  | Answer                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| Layout Plan            | `NOT_APPLICABLE` for every relation — no boundaries, no openings                 |
+| Geometry Specification | **PASS / FAIL** — from `SpecifiedOpening.connects` and `SpecifiedWall.separates` |
+
+The Specification is the first stage in this pipeline that can answer the
+question, and therefore the first that says anything about it. `SpecifiedOpening`
+already names the two spaces it joins and is already a door or a passage — the
+same two kinds `@archisimple/spatial` treats as traversable at the built stage —
+so nothing new is modelled and this layer acquires no dependency on a built model
+it never sees.
+
+**Not part of this**: naming one instance of a repeated space (ADR-0034 §17.1
+requires a separate ADR, and BUG-011 TC-03/04/05 stay blocked); any percentage
+anywhere; and any second satisfaction authority — `GeometryAdjacency.sharesWall`
+is a geometric fact used to choose where a door can go, and is named so that it
+cannot be mistaken for a verdict.
 
 ---
 

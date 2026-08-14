@@ -5,26 +5,51 @@
  * `@archisimple/skills`' `bug-011-constraint-evaluation.test.ts`. Tests A and B
  * are skill semantics and live there; C and D need a Layout Plan and live here.
  *
- * Nothing here changes the data model or invents constraint vocabulary. Test C
- * builds a plan by hand — the "deliberately invalid candidate" of BUG-011 TC-07
- * and TC-10 — because `synthesizeLayout` cannot produce one: `buildGraph`
- * (`layout-synthesis.ts:240`) attaches every space to its storey's circulation
- * node unconditionally, so a disconnected space is not reachable through the
- * generator.
+ * Nothing here changes the data model or invents constraint vocabulary.
+ *
+ * ## Sprint 1.8 — what is green, and what had to be rewritten
+ *
+ * Test C is green. Two of its assertions were made green by this sprint —
+ * `buildCirculation` no longer emits its unconditional sentence, and
+ * `buildGraph` no longer attaches every space to circulation.
+ *
+ * **The other two were passing for the wrong reason and are rewritten.** When
+ * ArchiSimple Sprint 037.3 removed the platform's superseded API,
+ * `computeLayoutQuality` began falling back to zeros, so an assertion reading
+ * `circulationQuality !== 1` held because the computation had broken rather than
+ * because anything was evaluated. A test that passes because a calculation
+ * failed is not evidence. Both now assert the **evaluator's** answer, at the
+ * stage that can give one, which is what ADR-0034 §18's "may be extended, never
+ * weakened" is for.
+ *
+ * Test D stays red, and stays blocked: ADR-0034 §17.1 requires a separate ADR
+ * before any constraint can name one instance of a repeated space.
  */
 
 import { describe, expect, it } from 'vitest';
 import { assembleBrief, classifyRequest } from '../brief/index.js';
+import { CONSTRAINT_OUTCOMES, CONSTRAINT_REASON_CODES } from '@archisimple/skills';
 import {
   circulationNodeId,
-  computeLayoutQuality,
+  computeLayoutSummary,
   createLayoutPlan,
+  describeLayoutSummary,
   synthesizeLayout,
   LAYOUT_EDGE_KINDS,
   LAYOUT_NODE_KINDS,
   type LayoutPlan,
   type LayoutSpace
 } from '../layout/index.js';
+import {
+  createGeometrySpecification,
+  evaluateSpecification,
+  OPENING_KINDS,
+  WALL_ROLES,
+  type GeometrySpecification,
+  type SpecifiedOpening,
+  type SpecifiedSpace,
+  type SpecifiedWall
+} from '../geometry/index.js';
 import { FUNCTIONAL_ZONES, SPACE_PRIORITIES, synthesizeProgramme } from '../programme/index.js';
 
 const TC01 = 'Design a 100 m2 single storey apartment with 2 bedrooms and 2 bathrooms';
@@ -106,37 +131,146 @@ function planWithDisconnectedBedroom(): LayoutPlan {
   });
 }
 
+/**
+ * The same topology, one stage down: a Specification in which `bedroom-2` has no
+ * opening to anything.
+ *
+ * This is where the question becomes answerable. Every other room is joined to
+ * the hallway by a door; the bedroom shares a wall with it and has no doorway
+ * through — which is BUG-011's plan exactly, in the artefact that carries
+ * openings.
+ */
+function specificationWithDisconnectedBedroom(): GeometrySpecification {
+  const room = (spaceId: string): SpecifiedSpace => ({
+    id: `polygon-${spaceId}`,
+    spaceId,
+    name: spaceId,
+    storey: 0,
+    boundary: [
+      { x: 0, y: 0 },
+      { x: 3, y: 0 },
+      { x: 3, y: 3 },
+      { x: 0, y: 3 }
+    ],
+    area: 9
+  });
+
+  const wall = (id: string, between: readonly string[]): SpecifiedWall => ({
+    id,
+    storey: 0,
+    start: { x: 0, y: 0 },
+    end: { x: 3, y: 0 },
+    thickness: 0.1,
+    role: WALL_ROLES.Internal,
+    height: 2.5,
+    separates: between.map((spaceId) => `polygon-${spaceId}`),
+    realises: []
+  });
+
+  const door = (id: string, wallId: string, connects: [string, string]): SpecifiedOpening => ({
+    id,
+    wallId,
+    kind: OPENING_KINDS.Door,
+    distanceAlongWall: 1.5,
+    width: 0.9,
+    height: 2.1,
+    sill: 0,
+    connects
+  });
+
+  return createGeometrySpecification({
+    sourceGeometry: { geometryGraphId: 'graph-under-test', geometryGraphRevision: 1 },
+    storeys: [{ index: 0, elevation: 0, height: 2.7 }],
+    spaces: ['hallway', 'living', 'bedroom-1', 'bedroom-2'].map(room),
+    walls: [
+      wall('wall-living', ['hallway', 'living']),
+      wall('wall-bedroom-1', ['hallway', 'bedroom-1']),
+      // Shared with the hallway, and solid. The whole point.
+      wall('wall-bedroom-2', ['hallway', 'bedroom-2'])
+    ],
+    openings: [
+      door('door-living', 'wall-living', ['hallway', 'living']),
+      door('door-bedroom-1', 'wall-bedroom-1', ['hallway', 'bedroom-1'])
+    ]
+  });
+}
+
 describe('BUG-011 Test C — a hallway existing is not spaces being reachable', () => {
   /**
-   * `circulationQuality` is the share of storeys that *have* a circulation space
-   * assigned (`scoreCirculation`), never the share of spaces that can reach one.
-   * The plan below has a hallway on its only storey, so it scores 1 while a
-   * bedroom is unreachable.
+   * **Rewritten in Sprint 1.8.** It read `computeLayoutQuality(...).
+   * circulationQuality !== 1`, and after ArchiSimple Sprint 037.3 that held
+   * because the calculation had broken and fell back to zero — not because
+   * anything was checked.
+   *
+   * The property it was reaching for is this: a hallway existing on a storey is
+   * not the spaces on that storey being able to reach it. The layout stage
+   * cannot say either way, and now says so, in the authority's own vocabulary
+   * rather than in a number that happened not to be 1.
    */
-  it('does not report full circulation quality when a space cannot reach circulation', () => {
-    const quality = computeLayoutQuality(planWithDisconnectedBedroom());
+  it('does not report circulation reachability at a stage that cannot establish it', () => {
+    const summary = computeLayoutSummary(planWithDisconnectedBedroom());
 
-    expect(quality.circulationQuality).not.toBe(1);
+    // Every storey has circulation on it — a true statement about storeys, and
+    // the one BUG-011's user read as "every room can reach the hallway".
+    expect(summary.circulation).toEqual({
+      storeys: 1,
+      withCirculation: 1,
+      unservedStoreys: []
+    });
+
+    // And nothing anywhere claims that. Every constraint is NOT_APPLICABLE, so
+    // there is no pass to misread, and the count of evaluated ones is zero.
+    expect(summary.constraints.total.evaluated).toBe(0);
+    expect(summary.constraints.total.passed).toBe(0);
+    expect(
+      summary.constraintResults.every(
+        (result) => result.outcome === CONSTRAINT_OUTCOMES.NotApplicable
+      )
+    ).toBe(true);
+
+    // The rendering says it too, in words, and claims nothing.
+    const rendered = describeLayoutSummary(summary);
+    expect(rendered).toContain('Not yet checked');
+    expect(rendered).not.toMatch(/satisfied|\bmet\b|100%/i);
   });
 
   /**
-   * The graph is the only place the disconnection is visible, and the quality
-   * calculation never reads it — `computeLayoutQuality` passes `plan.spaces` to
-   * the skills and ignores `plan.graph` entirely. This asserts the input, so a
-   * correction that consults the graph is distinguishable from one that merely
-   * changes a number.
+   * **Rewritten in Sprint 1.8.** It asserted only that the disconnection was
+   * visible in the graph and invisible to the quality calculation — true, and no
+   * longer the interesting half now that something reads it.
+   *
+   * The disconnection is still the premise, and the evaluator now finds it: at
+   * the Geometry Specification, where openings exist, an unreachable bedroom is
+   * a named FAIL rather than a number nobody could act on.
    */
-  it('has the disconnection visible in the graph the quality calculation ignores', () => {
+  it('finds the unreachable bedroom at the stage that can decide it', () => {
     const plan = planWithDisconnectedBedroom();
 
+    // The premise, unchanged: nothing joins bedroom-2 to circulation.
     const reachesCirculation = plan.graph.edges.some(
       (edge) =>
         (edge.fromNodeId === 'bedroom-2' && edge.toNodeId === circulationNodeId(0)) ||
         (edge.toNodeId === 'bedroom-2' && edge.fromNodeId === circulationNodeId(0))
     );
-
-    // Green today — this is the premise of the test above, not a defect.
     expect(reachesCirculation).toBe(false);
+
+    // A Specification of the same topology: three rooms reachable from the
+    // hallway, and a fourth with no opening to anything.
+    const compliance = evaluateSpecification({
+      specification: specificationWithDisconnectedBedroom(),
+      intents: [],
+      spaces: plan.spaces
+    });
+
+    const bedroomTwo = compliance.failures.find((failure) =>
+      failure.spaceIds.includes('bedroom-2')
+    );
+
+    expect(bedroomTwo).toBeDefined();
+    expect(bedroomTwo?.outcome).toBe(CONSTRAINT_OUTCOMES.Fail);
+    expect(bedroomTwo?.reasonCode).toBe(CONSTRAINT_REASON_CODES.Unreachable);
+    // And the rooms that *are* reachable are not swept up with it.
+    expect(compliance.summary.total.passed).toBe(2);
   });
 
   /**

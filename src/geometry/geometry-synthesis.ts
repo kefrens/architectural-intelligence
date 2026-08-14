@@ -211,26 +211,29 @@ export function synthesizeGeometry(options: SynthesizeGeometryOptions): Geometry
   const placed = polygons.map((polygon) => ({ polygon }));
   const { walls, byPair } = wallCandidatesFor(placed, packed.value.envelopes);
 
-  // Every relation the Layout resolved is carried forward with whether *this*
-  // stage realised it. A layout may have called two rooms adjacent and the
-  // packer still failed to place them together — recording that is `I3`.
-  const adjacencies: readonly GeometryAdjacency[] = layout.adjacencies.map((adjacency) => {
-    const wallId = byPair.get(pairKey(adjacency.fromSpaceId, adjacency.toSpaceId));
-    const touching = wallId !== undefined;
-    return {
-      fromSpaceId: adjacency.fromSpaceId,
-      toSpaceId: adjacency.toSpaceId,
-      strength: adjacency.strength,
-      relation: adjacency.relation,
-      satisfied: adjacency.strength === 'avoid' ? !touching : touching,
-      reason: adjacency.reason
-    };
-  });
+  // Every relation the Layout resolved is carried forward with the geometric
+  // fact this stage established: did the packer put a wall between these two.
+  // A layout may have called two rooms adjacent and the packer still failed to
+  // place them together — recording that is `I3`.
+  //
+  // It is a fact, not a verdict (Sprint 1.8, ADR-0034 §4). `avoid` is no longer
+  // inverted into a satisfaction: two rooms being apart in the packing does not
+  // honour a requirement that they never open onto each other, because the
+  // Specification may still put a door between them.
+  const adjacencies: readonly GeometryAdjacency[] = layout.adjacencies.map((adjacency) => ({
+    fromSpaceId: adjacency.fromSpaceId,
+    toSpaceId: adjacency.toSpaceId,
+    strength: adjacency.strength,
+    relation: adjacency.relation,
+    sharesWall: byPair.get(pairKey(adjacency.fromSpaceId, adjacency.toSpaceId)) !== undefined,
+    reason: adjacency.reason
+  }));
 
   // An opening is needed wherever the layout wanted passage and the geometry
-  // gave it a wall to pass through.
+  // gave it a wall to pass through. This is the legitimate use of the geometric
+  // fact: choosing a candidate, which generation may do and evaluation may not.
   const openingCandidates: readonly OpeningCandidate[] = adjacencies
-    .filter((adjacency) => adjacency.strength !== 'avoid' && adjacency.satisfied)
+    .filter((adjacency) => adjacency.strength !== 'avoid' && adjacency.sharesWall)
     .map((adjacency) => {
       const wallCandidateId = byPair.get(pairKey(adjacency.fromSpaceId, adjacency.toSpaceId))!;
       return {
@@ -252,12 +255,16 @@ export function synthesizeGeometry(options: SynthesizeGeometryOptions): Geometry
   ];
 
   const warnings: string[] = [];
-  const unrealised = adjacencies.filter(
-    (adjacency) => adjacency.strength !== 'avoid' && !adjacency.satisfied
+  // States the geometric fact and stops. It deliberately does **not** say the
+  // requirement was missed: two rooms that share no wall may still be joined
+  // through a third, and whether the programme's relationship holds is decided
+  // at the Specification by `constraints.evaluate` (ADR-0034 §4, §10).
+  const noSharedWall = adjacencies.filter(
+    (adjacency) => adjacency.strength !== 'avoid' && !adjacency.sharesWall
   );
-  for (const adjacency of unrealised) {
+  for (const adjacency of noSharedWall) {
     warnings.push(
-      `${nameOf(polygons, adjacency.fromSpaceId)} and ${nameOf(polygons, adjacency.toSpaceId)} did not end up sharing a wall — ${adjacency.reason}.`
+      `${nameOf(polygons, adjacency.fromSpaceId)} and ${nameOf(polygons, adjacency.toSpaceId)} did not end up sharing a wall, so no doorway can join them directly — ${adjacency.reason}.`
     );
   }
 

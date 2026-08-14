@@ -253,6 +253,29 @@ const ADJACENCY_TEMPLATE: readonly {
     strength: ADJACENCY_STRENGTHS.Required,
     reason: 'the entrance reaches the living space without passing through another room'
   },
+  // Sprint 1.8, BUG-011 — and a row that is deliberately **not** here.
+  //
+  // The reproduction's required-adjacency denominator was 1 (the hallway↔living
+  // room entry above), so "Required adjacencies met: 100%" was reported over a
+  // programme that had never asked for a bedroom to be reachable at all. The
+  // obvious repair is a `hallway → bedroom` template row, and it was tried.
+  //
+  // It is **wrong**, and the test suite caught it: in a two-storey house the
+  // bedrooms are upstairs and the hallway is on the ground floor, so the
+  // requirement resolves as ruled out for every ordinary home — a requirement
+  // the platform invented and then reported as unmeetable. Bug 003's lesson
+  // exactly: an invented requirement is worse than a missing one.
+  //
+  // What a user actually means is *a bedroom is entered from circulation*, where
+  // circulation is whichever space serves that storey — a landing upstairs, a
+  // hallway below. `IntendedAdjacency` names two spaces and cannot say "any
+  // circulation space", so the requirement is not expressible here.
+  //
+  // It is expressible as **circulation reachability**, which is a relation over
+  // the whole circulation system rather than a pair, and `constraints.evaluate`
+  // now answers it (see `src/constraints/`). That is where BUG-011's missing
+  // requirement is stated, and it is checked at the Geometry Specification
+  // rather than assumed in prose.
   {
     from: SPACE_ROLES.Bedroom,
     to: SPACE_ROLES.Bathroom,

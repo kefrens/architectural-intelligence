@@ -112,20 +112,16 @@ export function synthesizeSpecification(
     const candidates = graph.wallCandidates.filter((candidate) => candidate.storey === storey);
     const realised = insertWallThickness.execute(
       {
-        polygons: here.map(
-          (polygon): RealisationPolygon => ({
-            polygonId: polygon.id,
-            corners: polygon.corners
-          })
-        ),
-        walls: candidates.map(
-          (candidate): RealisationWall => ({
-            wallId: candidate.id,
-            start: candidate.start,
-            end: candidate.end,
-            thickness: thicknessFor(roleOf(candidate.external), defaults)
-          })
-        )
+        polygons: here.map((polygon): RealisationPolygon => ({
+          polygonId: polygon.id,
+          corners: polygon.corners
+        })),
+        walls: candidates.map((candidate): RealisationWall => ({
+          wallId: candidate.id,
+          start: candidate.start,
+          end: candidate.end,
+          thickness: thicknessFor(roleOf(candidate.external), defaults)
+        }))
       },
       SKILL_CONTEXT
     );
@@ -167,7 +163,9 @@ export function synthesizeSpecification(
       });
     }
 
-    openings.push(...openingsFor(graph, storey, runs, realised.value.centrelines, defaults, warnings));
+    openings.push(
+      ...openingsFor(graph, storey, runs, realised.value.centrelines, defaults, warnings)
+    );
 
     growth.push({
       storey,
@@ -328,12 +326,17 @@ function kindFor(graph: GeometryGraph, candidate: OpeningCandidate): OpeningKind
  * one is running a solver, which ADR-0031 Rule 2 forbids it.
  */
 function constraintsFrom(graph: GeometryGraph): readonly GeometryConstraintRecord[] {
+  // The reason is the programme's own, verbatim. It used to gain a suffix —
+  // "— not realised by the approved geometry" — decided from the graph's own
+  // `satisfied` boolean, which made a provenance record carry a compliance
+  // verdict computed outside the evaluator (Sprint 1.8, ADR-0034 §4 and §10).
+  //
+  // Whether the relationship holds is answered by `constraints.evaluate` against
+  // this Specification, and reported where it is established.
   return graph.adjacencies.map((adjacency) => ({
     subjectId: `${adjacency.fromSpaceId}::${adjacency.toSpaceId}`,
     kind: `adjacency:${adjacency.relation}`,
-    reason: adjacency.satisfied
-      ? adjacency.reason
-      : `${adjacency.reason} — not realised by the approved geometry`
+    reason: adjacency.reason
   }));
 }
 
@@ -385,14 +388,12 @@ function round(value: number): number {
 /** Every junction the specification's walls form — for validation, and for a consumer. */
 export function specificationJunctions(specification: GeometrySpecification) {
   return findJunctions(
-    specification.walls.map(
-      (wall): WallCentreline => ({
-        wallId: wall.id,
-        start: wall.start,
-        end: wall.end,
-        axis: Math.abs(wall.start.x - wall.end.x) < 1e-9 ? 'vertical' : 'horizontal',
-        thickness: wall.thickness
-      })
-    )
+    specification.walls.map((wall): WallCentreline => ({
+      wallId: wall.id,
+      start: wall.start,
+      end: wall.end,
+      axis: Math.abs(wall.start.x - wall.end.x) < 1e-9 ? 'vertical' : 'horizontal',
+      thickness: wall.thickness
+    }))
   );
 }

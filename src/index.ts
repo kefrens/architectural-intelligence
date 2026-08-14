@@ -165,6 +165,8 @@ export {
   DEFAULT_CONSTRUCTION,
   describeDefaults,
   describeSpecification,
+  describeSpecificationCompliance,
+  evaluateSpecification,
   gateGeometrySpecification,
   GEOMETRY_CONTRACT_VERSION,
   GEOMETRY_SPECIFICATION_KIND,
@@ -197,6 +199,7 @@ export {
   type SpecificationViolation,
   type SpecifiedOpening,
   type SpecifiedSpace,
+  type SpecificationCompliance,
   type SpecifiedStorey,
   type SpecifiedWall,
   type SynthesizeSpecificationOptions,
@@ -205,10 +208,10 @@ export {
 
 export {
   circulationNodeId,
-  computeLayoutQuality,
+  computeLayoutSummary,
   createLayoutPlan,
   describeLayout,
-  describeLayoutQuality,
+  describeLayoutSummary,
   isLayoutPlanComplete,
   LAYOUT_EDGE_KINDS,
   LAYOUT_NODE_KINDS,
@@ -216,6 +219,7 @@ export {
   matchesProgramme,
   reviseLayoutPlan,
   storeyName,
+  storeyPreconditionOf,
   summarizeLayoutPlan,
   synthesizeLayout,
   toLayoutProposal,
@@ -225,11 +229,11 @@ export {
   type LayoutNode,
   type LayoutNodeKind,
   type LayoutPlan,
-  type LayoutQuality,
   type LayoutSpace,
   type LayoutSynthesisResult,
   type PlanningGraph,
   type ProgrammeProvenance,
+  type LayoutSummary,
   type ResolvedAdjacency,
   type SynthesizeLayoutOptions
 } from './layout/index.js';
@@ -385,3 +389,19 @@ export {
   createProgrammeToolDefinition,
   createSpecificationToolDefinition
 } from './tools/index.js';
+
+/**
+ * Constraint adaptation (Sprint 1.8, ArchiSimple ADR-0034).
+ *
+ * Exported so a host or an extension can build the same constraints this layer
+ * builds and hand them to the same authority. There is no evaluator here — that
+ * is `constraints.evaluate` in `@archisimple/skills`, and there is exactly one.
+ */
+export {
+  circulationReachabilityConstraints,
+  circulationRootIds,
+  relationshipConstraints,
+  spacePair,
+  type ConstrainedSpace,
+  type ConstraintSource
+} from './constraints/index.js';

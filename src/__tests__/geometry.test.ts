@@ -293,16 +293,31 @@ describe('evaluation', () => {
     );
   });
 
-  it('describes invariants and objectives separately, without naming a sprint', () => {
+  it('describes invariants without naming a sprint, and reports no percentage score', () => {
     const layout = layoutFor(TWO_STOREY);
     const text = describeEvaluation(
       evaluateGeometryGraph(geometryFrom(layout), { expected: expectedInstances(layout) })
     );
 
     expect(text).toMatch(/Guaranteed/i);
-    expect(text).toMatch(/Can be improved/i);
     // A card that advertises unbuilt work stops being true when that work moves.
     expect(text).not.toMatch(/sprint|28\.2/i);
+    // BUG-012 Finding 1: a percentage here would compete with the
+    // Specification stage's later, authoritative "Met: N of M checked".
+    expect(text).not.toMatch(/%/);
+  });
+
+  it('omits "Can be improved" entirely once every objective has nothing left to report', () => {
+    // The built-in packer against its own layout is the conformant case: there
+    // is nothing to improve, so the section — which used to render with a
+    // score of 100% for each objective — should not render at all.
+    const layout = layoutFor(TWO_STOREY);
+    const evaluation = evaluateGeometryGraph(geometryFrom(layout), {
+      expected: expectedInstances(layout)
+    });
+
+    expect(evaluation.objectives.every((objective) => objective.misses.length === 0)).toBe(true);
+    expect(describeEvaluation(evaluation)).not.toMatch(/Can be improved/i);
   });
 
   it('describeEvaluation computes nothing — same evaluation, same text', () => {
@@ -421,14 +436,18 @@ describe('geometry review', () => {
     expect(proposal.approvalState).toBe('pending');
   });
 
-  it('shows what is guaranteed and what can be improved', () => {
+  it('shows what is guaranteed, and no percentage score for what is not', () => {
     const layout = layoutFor(TWO_STOREY);
     const proposal = toGeometryGraphProposal(geometryFrom(layout), {
       expected: expectedInstances(layout)
     });
 
     expect(proposal.explanation).toMatch(/Guaranteed/i);
-    expect(proposal.explanation).toMatch(/Can be improved/i);
+    // BUG-012 Finding 1: no legacy percentage-based quality claim survives
+    // onto the card, and this fixture's packing is conformant, so there is
+    // nothing left to improve at all.
+    expect(proposal.explanation).not.toMatch(/%/);
+    expect(proposal.explanation).not.toMatch(/Can be improved/i);
   });
 
   it('refuses to propose an empty graph', () => {

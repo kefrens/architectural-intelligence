@@ -120,16 +120,23 @@ export function describeEvaluation(evaluation: PackingEvaluation): string {
   }
   lines.push('');
 
-  lines.push('**Can be improved**');
-  for (const objective of evaluation.objectives) {
-    const percent = Math.round(objective.score * 100);
-    lines.push(`- ${objective.summary} — ${percent}%`);
-    for (const miss of objective.misses) {
-      lines.push(`  - ${miss}`);
+  // BUG-012 Finding 1: a percentage here reads as a compliance measurement, and
+  // this stage is not where one exists — ADR-0034's evaluator has no
+  // Geometry Graph row (no openings exist yet to decide adjacency or
+  // reachability from), so a score computed here can only be a packing
+  // heuristic. Showing it as "adjacency — 100%" beside the Specification
+  // stage's later, authoritative "6 of 8 requirements met" is exactly the
+  // two-sources-of-truth confusion ADR-0034 exists to end. What survives is
+  // the qualitative miss, with no numeric claim attached to it.
+  const improvable = evaluation.objectives.filter((objective) => objective.misses.length > 0);
+  if (improvable.length > 0) {
+    lines.push('**Can be improved**');
+    for (const objective of improvable) {
+      lines.push(`- ${objective.summary}`);
+      for (const miss of objective.misses) {
+        lines.push(`  - ${miss}`);
+      }
     }
-  }
-
-  if (evaluation.objectives.some((objective) => objective.misses.length > 0)) {
     lines.push(
       '',
       'These are improved by constraint optimisation, which reshapes this geometry without changing the approved layout.'

@@ -37,6 +37,8 @@ import {
   evaluateConstraints,
   summariseConstraintResults,
   CONSTRAINT_OUTCOMES,
+  CONSTRAINT_REASON_CODES,
+  CONSTRAINT_RELATIONS,
   EVALUATION_STAGES,
   type ConstraintEvaluationSummary,
   type ConstraintResult,
@@ -205,8 +207,16 @@ function key(a: string, b: string): string {
  * says it only because the evaluator established it. Counts show their
  * denominator (ADR-0034 §5), failures are named individually, and
  * `not applicable` is reported separately rather than folded into either side.
+ *
+ * The `specification` is taken only to translate a failure's space ids into the
+ * names a reviewer already reads elsewhere on the card (BUG-012 Finding 2). The
+ * evaluator stays id-based — `failure.reason` still carries the raw ids, and
+ * nothing here recomputes or second-guesses its verdict, only how it reads.
  */
-export function describeSpecificationCompliance(compliance: SpecificationCompliance): string {
+export function describeSpecificationCompliance(
+  compliance: SpecificationCompliance,
+  specification: GeometrySpecification
+): string {
   const { total } = compliance.summary;
 
   if (total.stated === 0) {
@@ -226,8 +236,82 @@ export function describeSpecificationCompliance(compliance: SpecificationComplia
   }
 
   for (const failure of compliance.failures) {
-    lines.push(`- ${failure.reason}`);
+    lines.push(`- ${describeFailure(failure, specification)}`);
   }
 
   return lines.join('\n');
+}
+
+/**
+ * One failure, in words a reviewer reads without needing the evaluator's ids.
+ *
+ * Built from the constraint's structured fields (`subjectSpaceId`,
+ * `objectSpaceId`, `relation`, `reasonCode`) rather than by editing
+ * `failure.reason` — the evaluator's own sentence is not a template this layer
+ * should parse. Circulation roots are named collectively as "the circulation"
+ * rather than resolved one by one: which spaces root reachability is an
+ * evaluator detail, not something a reviewer needs named to act on the failure.
+ */
+function describeFailure(failure: ConstraintResult, specification: GeometrySpecification): string {
+  const { constraint, reasonCode } = failure;
+  const subject = nameOf(specification, constraint.subjectSpaceId);
+
+  switch (reasonCode) {
+    case CONSTRAINT_REASON_CODES.Unreachable:
+      return `${subject} cannot be reached from the circulation.`;
+
+    case CONSTRAINT_REASON_CODES.RelationAbsent: {
+      const object = nameOf(specification, constraint.objectSpaceId!);
+      return constraint.relation === CONSTRAINT_RELATIONS.Adjacent
+        ? `${subject} and ${object} do not share a wall.`
+        : `${subject} has no doorway or opening connecting it to ${object}.`;
+    }
+
+    case CONSTRAINT_REASON_CODES.RelationProhibited: {
+      const object = nameOf(specification, constraint.objectSpaceId!);
+      return constraint.relation === CONSTRAINT_RELATIONS.Adjacent
+        ? `${subject} and ${object} share a wall, and were meant to be kept apart.`
+        : `${subject} and ${object} are connected by an opening, and were meant to be kept apart.`;
+    }
+
+    case CONSTRAINT_REASON_CODES.UnknownSpace:
+      // A space the constraint names is absent from this Specification's own
+      // space list — an internal-consistency failure rather than a design one.
+      // There is no name to resolve it to, so this stays generic on purpose.
+      return 'A space the programme named is missing from this design.';
+
+    default:
+      // PASS/NOT_APPLICABLE reason codes never reach `compliance.failures`
+      // (filtered to `CONSTRAINT_OUTCOMES.Fail` above); this is unreachable in
+      // practice and falls back to the evaluator's own sentence rather than
+      // throwing if that ever changes.
+      return failure.reason;
+  }
+}
+
+/**
+ * A space id, resolved to what a reviewer reads elsewhere on the card.
+ *
+ * A Programme space with `count > 1` becomes several `SpecifiedSpace` rows
+ * sharing one `spaceId` (ADR-0034 §17.1's repeated-space identity is deferred,
+ * not modelled here) — so more than one name can answer to the same id. Rather
+ * than guess which instance the evaluator meant, an ambiguous id falls back to
+ * its generic form ("a bedroom") instead of picking one name arbitrarily.
+ */
+function nameOf(specification: GeometrySpecification, spaceId: string): string {
+  const matches = specification.spaces.filter((space) => space.spaceId === spaceId);
+  if (matches.length === 0) {
+    return 'A space';
+  }
+  if (matches.length === 1) {
+    return matches[0]!.name;
+  }
+  return genericNameOf(matches[0]!.name);
+}
+
+/** "Bedroom 2" → "a bedroom". Falls back to the name itself if it carries no instance suffix. */
+function genericNameOf(name: string): string {
+  const singular = name.replace(/\s+\d+$/, '').trim() || name;
+  const article = /^[aeiou]/i.test(singular) ? 'an' : 'a';
+  return `${article} ${singular.toLowerCase()}`;
 }

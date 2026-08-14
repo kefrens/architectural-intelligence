@@ -64,15 +64,46 @@ export function toGeometrySpecificationProposal(
     explanation:
       compliance === undefined
         ? summarizeGeometrySpecification(specification)
-        : `${summarizeGeometrySpecification(specification)}\n\n${describeSpecificationCompliance(compliance)}`,
+        : `${summarizeGeometrySpecification(specification)}\n\n${describeSpecificationCompliance(compliance, specification)}`,
     reasoning:
       'This gives the approved geometry real walls — thickness, height and openings — so the design is complete enough for a CAD application to build without deciding anything further.',
     // Sprint 28.3: what an installed extension added is named beside what the
     // platform assumed, in the same list the user already reads.
     assumptions: [...specification.assumptions, ...contributionNotes(specification)],
-    warnings: specification.warnings,
+    // BUG-012 Finding 3: approving a Specification only records it — it is not
+    // this stage's place to decide what a failing evaluation should mean for
+    // approval (that is the next ADR's question, not this one's). What this
+    // stage can do honestly today is make sure "recorded" is never the only
+    // thing said about a specification that did not satisfy the programme, so
+    // a shortfall stays visible through the same warnings list the card
+    // already renders next to the approval outcome, not tucked inside prose
+    // the eye skips.
+    warnings: [...specification.warnings, ...complianceWarnings(compliance)],
     expectedOutcome: EXPECTED_OUTCOME
   });
+}
+
+/**
+ * Whether this compliance verdict deserves a warning on the proposal card.
+ *
+ * Empty when there is nothing to check, and empty when every stated
+ * requirement passed — a warning that always fires would be noise, and the
+ * point is to surface the one case the card would otherwise understate.
+ * Deliberately just a warning: it does not withhold `expectedOutcome`, refuse
+ * the proposal, or otherwise change what approving it does (BUG-012 Finding 3
+ * is explicit that this bug does not decide FAIL semantics).
+ */
+function complianceWarnings(compliance: SpecificationCompliance | undefined): readonly string[] {
+  if (compliance === undefined) {
+    return [];
+  }
+  const { total } = compliance.summary;
+  if (total.stated === 0 || total.passed === total.evaluated) {
+    return [];
+  }
+  return [
+    `This design does not yet satisfy the programme in full — ${total.passed} of ${total.evaluated} requirements met. Approving records it as evaluated, not as complete.`
+  ];
 }
 
 /**

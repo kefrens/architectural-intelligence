@@ -1,10 +1,30 @@
 # BUG-011 --- Generated plan does not fully satisfy the programme
 
-**Status:** Proposed\
+**Status:** Partially resolved --- detection solved, end-to-end handling pending\
 **Repository:** architectural-intelligence + ArchiSimple\
 **Type:** Bug / validation and generation quality\
 **Priority:** High\
-**Related:** BUG-008, BUG-009, BUG-010
+**Related:** BUG-008, BUG-009, BUG-010, BUG-012, ADR-0034
+
+> **2026-08-14 update.** The authoritative constraint-evaluation foundation
+> (ADR-0034, Sprint 037.3) closes the defect this report opened with: the
+> evaluator now correctly detects that a generated Specification does not
+> satisfy every programme requirement, using stable ids rather than any
+> generator's own satisfaction claim. BUG-012 then found, and fixed, the
+> presentation gaps that detection alone did not close — legacy percentage
+> claims left visible beside the authoritative count, raw ids in failure
+> messages, and a "Recorded with the project" summary that read as compliance
+> regardless of the verdict.
+>
+> **What remains open** is not a bug this report or BUG-012 can close: what a
+> `fail` verdict should *mean* for the workflow — whether it blocks approval,
+> triggers optimisation, or is merely informational — is deliberately
+> undecided pending the next ADR (BUG-012's own scope boundary). This report
+> stays open until that ADR lands and an end-to-end run reflects it, but the
+> specific claim in Problem §1 below — that the system could report a plan as
+> 100% satisfying the programme while a required doorway was missing — no
+> longer reproduces: the same scenario now reports the shortfall by name.
+
 
 ------------------------------------------------------------------------
 

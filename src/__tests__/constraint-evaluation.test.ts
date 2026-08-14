@@ -366,7 +366,8 @@ describe('the Geometry Specification gives the first real verdict', () => {
 
   it('reports the failure to a reader, with the denominator visible', () => {
     const rendered = describeSpecificationCompliance(
-      evaluateSpecification({ specification: sealed, intents: [], spaces: SPACES })
+      evaluateSpecification({ specification: sealed, intents: [], spaces: SPACES }),
+      sealed
     );
 
     expect(rendered).toMatch(/Met: 1 of 2 checked/);
@@ -380,7 +381,8 @@ describe('the Geometry Specification gives the first real verdict', () => {
         specification: joined,
         intents: [],
         spaces: [{ id: 'hall', zone: FUNCTIONAL_ZONES.Circulation }]
-      })
+      }),
+      joined
     );
 
     expect(rendered).toMatch(/nothing to check/i);

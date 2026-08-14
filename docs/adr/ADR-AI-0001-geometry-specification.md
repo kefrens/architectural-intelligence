@@ -1,8 +1,8 @@
 # ADR-AI-0001: Geometry Specification as the Final Architectural Artefact
 
 - **Status:** Accepted
-- **Revision:** 2.0
-- **Date:** 2026-08-09
+- **Revision:** 2.1
+- **Date:** 2026-08-14
 - **Deciders:** ArchiSimple Project
 - **Relates to:** ArchiSimple ADR-0027.1 (planning pipeline), ADR-0030 (repository separation), ADR-0031 (geometry execution pipeline)
 
@@ -14,6 +14,7 @@
 | -------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.0      | 2026-08-09 | Initial proposal. Named the artefact "Geometry Proposal" and terminated the pipeline at it.                                                                                                                                                                                                                                                                                                                                 |
 | 2.0      | 2026-08-09 | Reviewed against the implementation. **Renamed to Geometry Specification** — "Geometry Proposal" already names the approval envelope around a Geometry Graph. **Placed after the Geometry Graph** rather than in place of it, and corrected the pipeline diagram, which had listed a mechanism (`Planning`) and an algorithm (`Packing Strategy`) as stages. Assigned **wall thickness to this repository** and said why. Added the ownership table, self-validation, the contract version, provenance, metric conventions, and numbered Rules. Scoped the "emits no commands" absolute to the design lane, which Direct Execution has always been exempt from. |
+| 2.1      | 2026-08-14 | ArchiSimple BUG-012 Finding 4 audited what was, until now, only a source comment: thickness insertion is permitted to enlarge the approved geometry and is never permitted to shrink it. **Added Rule 12**, stating that contract explicitly and making it citable, rather than leaving it discoverable only by reading `insertWallThickness` and `synthesizeSpecification`. No behaviour changed — the implementation already did this and already reported it through `warnings`/`assumptions`; this revision closes the gap between what the code does and what the ADR says it may do. |
 
 ---
 
@@ -337,9 +338,38 @@ Offsetting, colinear merging, junction geometry and area recomputation call
 needs does not exist yet. No stage re-implements geometry maths, and no stage
 asks a language model to perform it (ADR-0027.1 Rule 9, ADR-0027).
 
----
+### Rule 12 --- A room may grow to fit a wall; it may never shrink
 
-## Rationale
+Wall thickness is inserted **after** the Geometry Graph was approved (Rule 2),
+along the boundary the packer drew with none. A room whose approved boundary a
+wall line now crosses has to give up that strip to the wall somehow, and there
+are exactly two places it can come from: the room can lose it, or the room can
+absorb it and the building envelope grows around the room instead.
+
+The first option is rejected, absolutely. It would mean a room the user approved
+at 12 m² is delivered smaller than that — silently, unless every consumer of
+this artefact happened to notice — which is precisely the failure ADR-0027.1
+exists to prevent: an approved artefact quietly under-delivering what was
+approved. So `insertWallThickness` (`@archisimple/skills`) takes the second
+option unconditionally: a room spanning a wall line **grows** by that wall, the
+building's envelope grows to match, and no room is ever delivered smaller than
+the Geometry Graph said.
+
+This is not unbounded licence to redesign. Rule 2 still holds — no space is
+added, removed, reshaped or moved between storeys — and Rule 4 requires that
+every growth be recorded rather than absorbed silently:
+
+- `synthesizeSpecification` reports the affected room's growth as a
+  `SpecifiedSpecification.warning`, in millimetres, naming the room.
+- The building envelope's own growth, per storey, is reported as an
+  `assumption` for the same reason `describeDefaults` reports a thickness
+  the user did not state — a number this stage decided rather than received.
+
+A future artefact carrying renovation constraints — *do not move this wall*,
+*preserve this external boundary* — changes what a caller may hand
+`insertWallThickness`, not this rule: a boundary marked immovable is one the
+solver must fail against rather than grow around, which is new input validation
+for that skill, not an exception carved into this Rule.
 
 ### The user approves the building they get
 

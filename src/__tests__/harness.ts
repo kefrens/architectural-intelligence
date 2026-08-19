@@ -147,7 +147,19 @@ export function createHarness(options: HarnessOptions = {}): Harness {
 
   const structure: ProjectStructureDto = {
     project: { id: 'project-1', type: 'Project', name: 'Test House' },
-    levels: [{ id: LEVEL_ID, type: 'Level', projectId: 'project-1', name: 'Ground Floor' }],
+    levels: [
+      {
+        id: LEVEL_ID,
+        type: 'Level',
+        projectId: 'project-1',
+        name: 'Ground Floor',
+        // Required since the platform's Sprint 045.2 (ADR-0045 Rule 1):
+        // `elevation` is the ordering, and `height` is floor-to-floor. The
+        // ground floor sits on the datum, which is what makes it the ground floor.
+        elevation: 0,
+        height: 2.7
+      }
+    ],
     walls,
     rooms,
     openings

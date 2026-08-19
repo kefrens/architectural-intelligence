@@ -1,10 +1,10 @@
 # Sprint 1.9 — Reading a Drawing
 
-> **Status:** Draft
-> **Version:** 1.0
+> **Status:** Implemented (2026-08-19) — see §10
+> **Version:** 1.1
 > **Repository:** `architectural-intelligence` — the platform half is **ArchiSimple Sprints 046.4, 046.5 and 046.6** (all landed)
 > **Related ADRs:** ArchiSimple **ADR-0044 revision 1.1** (Rule 1 — extraction produces a Geometry Graph; Rule 3 — the host assembles; Rule 4 — deterministic work is a Skill's; Rule 5 — confidence is a blocker; Rule 6 — the calibration is the authority; Rule 8 — the image reaches the model through the AI service; Rule 10 — two repositories, in order); ADR-0027.1 Rules 6, 7, 8, 9; ADR-0026 (the AI service owns credentials); ADR-0030 Rule 8
-> **Prerequisites:** §2 — **one of them does not exist yet and is ArchiSimple's**
+> **Prerequisites:** §2 — all met. §3's blocker was closed by ArchiSimple **Sprint 046.4c**
 > **Next:** ArchiSimple 046.7 (observations become a Geometry Graph)
 
 ---
@@ -50,7 +50,7 @@ them (ADR-0027.1 Rule 9).
 
 ---
 
-## 3. The prerequisite that does not exist yet
+## 3. The prerequisite that did not exist yet — closed
 
 **The observation vocabulary is declared in the wrong repository.**
 
@@ -72,8 +72,8 @@ Three ways out, and only one survives contact:
 other type that crosses this exact seam — and it sits below the boundary where a
 vocabulary with no behaviour belongs.
 
-That is an **ArchiSimple sprint**, and it must land and release first (ADR-0030
-Rule 8). Call it **046.4c**. It is a move, not a redesign: the types are
+That is an **ArchiSimple sprint**, and it had to land first (ADR-0030 Rule 8).
+It did: **046.4c**, `6d6b354`. It is a move, not a redesign: the types are
 unchanged, `apps/web` re-exports from the new home so 046.4's compliance test
 keeps pointing somewhere real, and the file version and Automation contract are
 untouched.
@@ -285,3 +285,37 @@ What makes it a *small* sprint is not decomposition but §2. Every deterministic
 thing this feature needs already exists and is already proven. What is left is
 the one part that genuinely requires a model, and it is worth keeping that in a
 single reviewable piece.
+
+
+---
+
+## 10. What implementation found
+
+**Built:** `src/reading/` — `read-plan.ts`, `plan-vision-port.ts`,
+`plan-reading-prompt.ts` — plus `ArchitecturalIntelligenceService.readPlan`,
+the `planVision` option, and 15 tests against a fake port.
+
+Three things the draft did not anticipate:
+
+1. **Unknown fields had to be dropped explicitly.** A model that volunteers a
+   `length` on a wall offers a number Rule 4 forbids. TypeScript does not stop
+   it at runtime, so `toObservation` rebuilds each observation field by field
+   rather than spreading. A test asserts the exact key set, and the mutation
+   that spreads the raw entry fails it.
+
+2. **Every field needs checking, not just `kind`.** "It has a `kind`, therefore
+   the rest is there" is not a safe read of a model's output — an observation
+   missing a coordinate would place a wall at `NaN`, which draws nothing and
+   reports success.
+
+3. **The prompt names what not to compute.** The draft's §4.3 tabulated it as a
+   design constraint; the implementation states it *to the model*, because one
+   told what to leave alone volunteers it far less often than one left to infer.
+
+**Mutation-checked**, all five caught: filtering uncertain observations instead
+of blocking; treating an empty reading as success; spreading the raw entry;
+skipping the absent-port branch; lowering the threshold to 0.5.
+
+**Unchanged, and verified:** no `fetch`, no socket and no credential in
+`src/reading/`. The existing `architecture-compliance` suite picked up the four
+new modules automatically and passes all three of its rules on each.

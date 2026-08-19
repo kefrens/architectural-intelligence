@@ -405,3 +405,24 @@ export {
   type ConstrainedSpace,
   type ConstraintSource
 } from './constraints/index.js';
+
+/**
+ * Reading a drawing (Sprint 1.9).
+ *
+ * The one place a model appears in the extraction arc. It produces observations
+ * and stops: the Geometry Graph is the host's to assemble (ADR-0044 Rule 3), and
+ * nothing here approves anything.
+ */
+export {
+  readPlan,
+  planReadingInstruction,
+  PLAN_READING_SCHEMA,
+  READING_CONFIDENCE_THRESHOLD,
+  type PlanReadingPromptInput,
+  type PlanVisionImage,
+  type PlanVisionInput,
+  type PlanVisionPort,
+  type PlanVisionReply,
+  type ReadPlanOutcome,
+  type ReadPlanRequest
+} from './reading/index.js';

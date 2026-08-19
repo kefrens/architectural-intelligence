@@ -98,6 +98,12 @@ import {
   type RequestClassification
 } from './brief/index.js';
 import {
+  readPlan,
+  type ReadPlanOutcome,
+  type ReadPlanRequest,
+  type PlanVisionPort
+} from './reading/index.js';
+import {
   ARCHITECTURAL_INTENT_KINDS,
   recognizeIntent,
   type ArchitecturalIntent
@@ -195,6 +201,15 @@ export interface ArchitecturalIntelligenceServiceOptions {
    */
   readonly artefacts?: PlanningArtefactReader;
   /**
+   * How a page reaches a model that can look at it (Sprint 1.9).
+   *
+   * Omitted means this host has no vision-capable provider, which is the
+   * ordinary case and not an error: `readPlan` answers with a blocker, and the
+   * application still imports, places and traces plans by hand. The port is the
+   * host's because ADR-0026 keeps every credential and every endpoint there.
+   */
+  readonly planVision?: PlanVisionPort;
+  /**
    * Whether the approved design has actually been built (Sprint 1.7 —
    * ADR-AI-0004).
    *
@@ -250,6 +265,8 @@ export class ArchitecturalIntelligenceService {
    * building exists, and it would go stale the moment one is built.
    */
   private readonly realisation: RealisationStateReader | undefined;
+  /** Supplied by the host, or absent (Sprint 1.9). This package opens no socket. */
+  private readonly planVision: PlanVisionPort | undefined;
 
   constructor(options: ArchitecturalIntelligenceServiceOptions) {
     this.knowledge = options.knowledge;
@@ -257,6 +274,22 @@ export class ArchitecturalIntelligenceService {
     this.briefDrafts = options.briefDrafts;
     this.artefacts = options.artefacts;
     this.realisation = options.realisation;
+    this.planVision = options.planVision;
+  }
+
+  /**
+   * Reads one rendered page into observations (Sprint 1.9).
+   *
+   * **A capability the host asks for, not a Tool and not a lane.** A Tool is
+   * something a model calls, and a model calling "read this drawing" is circular.
+   * A lane classifies an utterance, and nobody typed anything here.
+   *
+   * It stops at observations: no Geometry Graph (the host assembles it —
+   * ADR-0044 Rule 3), no `Proposal` (ADR-0027.1 Rule 7's one approval mechanism
+   * stays one), and no arithmetic of any kind (Rule 9 — the Skills exist).
+   */
+  readPlan(request: ReadPlanRequest): Promise<ReadPlanOutcome> {
+    return readPlan(request, this.planVision);
   }
 
   /**

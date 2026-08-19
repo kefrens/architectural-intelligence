@@ -34,6 +34,7 @@ import {
   type ArchitecturalStageState,
   type ArchitecturalWorkflowState,
   type ArtefactIdentity,
+  type SkippedStageReason,
   type StaleDerivation,
   type WorkflowAction
 } from './workflow-state.js';
@@ -48,6 +49,27 @@ export interface DeriveWorkflowStateOptions {
   readonly artefacts?: PlanningArtefactReader;
   /** Whether an unfinished Brief is open in the conversation. */
   readonly hasBriefDraft?: boolean;
+  /**
+   * Stages this design will never hold an artefact for, and why (Sprint 046.4b
+   * — ADR-0044 revision 1.1 Rule 2).
+   *
+   * A design **extracted from a drawing** enters the pipeline at the Geometry
+   * Graph, so the three stages above it are absent by construction rather than
+   * merely undone. Without this they read as `none`, and a host or a model
+   * looking at the projection reports a missing Brief as an outstanding step —
+   * nagging forever about an artefact that is not coming.
+   *
+   * **Supplied rather than inferred**, and that is the same argument
+   * `hasBriefDraft` already makes: whether a design came from a drawing is the
+   * *host's* fact, recorded on the Graph's provenance (ADR-0044 open question 4),
+   * and re-deriving it here would put a second opinion about it in a second
+   * place.
+   *
+   * An approved artefact **wins**: a user who traced a plan and later wrote a
+   * Brief has a Brief, and describing the building you traced does not
+   * retroactively make that Brief the Graph's source.
+   */
+  readonly skippedStages?: Readonly<Partial<Record<PlanningStage, SkippedStageReason>>>;
 }
 
 export function deriveWorkflowState(
@@ -89,12 +111,35 @@ function deriveStage(
   const eligible = blockers.length === 0;
   const stale = record === undefined ? undefined : staleness(descriptor, record.value, upstream);
 
+  // Skipped only where nothing was approved: an artefact in hand is an artefact,
+  // whatever the design's origin (Rule 2's "a user may still write a Brief").
+  const skippedReason =
+    approved === undefined ? options.skippedStages?.[descriptor.stage] : undefined;
+
+  const artefact = artefactState(
+    descriptor,
+    approved !== undefined,
+    options.hasBriefDraft === true,
+    skippedReason
+  );
+
+  // **Derived from the resolved state, not from the option.** A draft beats
+  // skipped (see `artefactState`), so reading the option directly here would
+  // attach a reason to a stage reporting `draft` — and `skipped` documents
+  // itself as present exactly when `artefact` is `skipped`. The first version of
+  // this sprint got that wrong and a test caught it.
+  const skipped =
+    artefact === STAGE_ARTEFACT_STATES.Skipped && skippedReason !== undefined
+      ? { reason: skippedReason }
+      : undefined;
+
   return {
     stage: descriptor.stage,
-    artefact: artefactState(descriptor, approved !== undefined, options.hasBriefDraft === true),
+    artefact,
     ...(approved === undefined ? {} : { approved }),
     revisions,
     ...(stale === undefined ? {} : { stale }),
+    ...(skipped === undefined ? {} : { skipped }),
     blockers,
     eligible,
     actions: actionsFor(eligible, approved !== undefined)
@@ -152,7 +197,8 @@ function readArtefact(
 function artefactState(
   descriptor: WorkflowStageDescriptor,
   hasApproved: boolean,
-  hasBriefDraft: boolean
+  hasBriefDraft: boolean,
+  skippedReason: SkippedStageReason | undefined
 ): ArchitecturalStageState['artefact'] {
   if (hasApproved) {
     // An approved artefact wins over a draft beside it. A user re-describing a
@@ -160,9 +206,13 @@ function artefactState(
     // project without a brief; Sprint 1.3 turns that draft into a revision.
     return STAGE_ARTEFACT_STATES.Approved;
   }
-  return descriptor.upstream === undefined && hasBriefDraft
-    ? STAGE_ARTEFACT_STATES.Draft
-    : STAGE_ARTEFACT_STATES.None;
+  // A draft beats skipped, and deliberately: a user who traced a plan and has
+  // now started describing the building is no longer skipping that stage, they
+  // are part-way through it.
+  if (descriptor.upstream === undefined && hasBriefDraft) {
+    return STAGE_ARTEFACT_STATES.Draft;
+  }
+  return skippedReason === undefined ? STAGE_ARTEFACT_STATES.None : STAGE_ARTEFACT_STATES.Skipped;
 }
 
 /**

@@ -16,9 +16,12 @@ export { deriveWorkflowState, type DeriveWorkflowStateOptions } from './workflow
 
 export {
   stageState,
+  SKIPPED_STAGE_REASONS,
   STAGE_ARTEFACT_STATES,
   WORKFLOW_ACTIONS,
   type ArchitecturalStageState,
+  type SkippedStage,
+  type SkippedStageReason,
   type ArchitecturalWorkflowState,
   type ArtefactIdentity,
   type StageArtefactState,

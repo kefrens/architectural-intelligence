@@ -64,13 +64,11 @@ export function validateGeometrySpecification(
   specification: GeometrySpecification,
   graph?: GeometryGraph
 ): readonly PlanBlocker[] {
-  return violationsOf(specification, graph).map(
-    (violation): PlanBlocker => ({
-      reason: PLAN_BLOCKER_REASONS.Unsupported,
-      message: `${violation.id} — ${SPECIFICATION_INVARIANTS[violation.id]}: ${violation.detail}`,
-      suggestions: ['Revise the geometry and generate the specification again.']
-    })
-  );
+  return violationsOf(specification, graph).map((violation): PlanBlocker => ({
+    reason: PLAN_BLOCKER_REASONS.Unsupported,
+    message: `${violation.id} — ${SPECIFICATION_INVARIANTS[violation.id]}: ${violation.detail}`,
+    suggestions: ['Revise the geometry and generate the specification again.']
+  }));
 }
 
 export function violationsOf(
@@ -237,7 +235,10 @@ export function gateGeometrySpecification(
   }
 
   const detail = violations
-    .map((violation) => `${violation.id} (${SPECIFICATION_INVARIANTS[violation.id]}): ${violation.detail}`)
+    .map(
+      (violation) =>
+        `${violation.id} (${SPECIFICATION_INVARIANTS[violation.id]}): ${violation.detail}`
+    )
     .join('. ');
 
   return {

@@ -138,10 +138,12 @@ describe('the canonical 100 m² apartment (Bug 007 §6)', () => {
   it('scales the programme to the target the user gave', () => {
     const programme = programmeFor(capture());
 
-    expect(programme.spaces.every((space) => space.areaSource === AREA_SOURCES.ScaledToStatedTotal))
-      .toBe(true);
-    expect(programme.assumptions.some((assumption) => /no total was stated/i.test(assumption)))
-      .toBe(false);
+    expect(
+      programme.spaces.every((space) => space.areaSource === AREA_SOURCES.ScaledToStatedTotal)
+    ).toBe(true);
+    expect(
+      programme.assumptions.some((assumption) => /no total was stated/i.test(assumption))
+    ).toBe(false);
   });
 
   it('carries the office into the programme as a required space', () => {

@@ -87,9 +87,6 @@ export function topicForSpaceName(name: string): string | undefined {
 }
 
 /** Whether any of these spaces fills `entry`'s role. */
-export function namesTopicSpace(
-  spaces: readonly DesiredSpace[],
-  entry: TopicSpace
-): boolean {
+export function namesTopicSpace(spaces: readonly DesiredSpace[], entry: TopicSpace): boolean {
   return spaces.some((space) => entry.role.test(space.name));
 }

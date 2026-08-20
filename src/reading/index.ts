@@ -1,5 +1,6 @@
 export {
   readPlan,
+  isAutomaticallyEligible,
   READING_CONFIDENCE_THRESHOLD,
   type ReadPlanOutcome,
   type ReadPlanRequest

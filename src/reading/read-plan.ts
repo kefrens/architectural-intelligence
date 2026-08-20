@@ -63,16 +63,56 @@ import { planReadingInstruction, type SuppliedTextRun } from './plan-reading-pro
 import type { PlanVisionImage, PlanVisionPort } from './plan-vision-port.js';
 
 /**
- * How sure an observation must be to be used.
+ * How sure an observation must be to be acted on **automatically**.
  *
- * The same 0.8 the host's `judgeObservations` applies (ArchiSimple Sprint
- * 046.4), deliberately **unchanged** by Sprint 1.10 even though the measured
- * confidence distribution sits mostly below it — 046.7s found the 0.5–0.6 band
- * close to a coin toss and 4 of 4 correct above 0.85. Recalibrating a threshold
- * to admit more of a small sample is how a measurement becomes a guarantee, so
- * the number stays and §"what happens below it" changes instead.
+ * ## Confidence controls automatic eligibility, not semantic existence
+ *
+ * The governing rule of Sprint 1.10b, and the reason this constant no longer
+ * removes anything from a reading. A claim below it is still a claim: it is
+ * reported, it reaches the deterministic resolver, and the resolver either finds
+ * substrate geometry that supports it or does not. A claim that selects nothing
+ * **produces no promotion, and that is the whole of its cost** (ADR-0044
+ * Rule 12) — it cannot cause geometry to be invented, because nothing in this
+ * layer or the next can invent geometry at all.
+ *
+ * Dropping it here instead would throw away the evidence that made the resolver
+ * work: 046.7u recovered five real partitions from `separates` claims, and every
+ * wall claim measured on that drawing sat between 0.45 and 0.60.
+ *
+ * ## Why the number is 0.8, and stays 0.8
+ *
+ * The same threshold the host's `judgeObservations` applies (ArchiSimple Sprint
+ * 046.4), so there is **one global gate** rather than two. It is deliberately
+ * left where it is even though the measured distribution sits mostly below it:
+ *
+ * | kind | measured confidence |
+ * | --- | --- |
+ * | space | 0.85 and up — the only kind that clears this consistently |
+ * | dimension | 0.55 – 0.70 |
+ * | wall | 0.45 – 0.60 |
+ * | opening | 0.40 – 0.60 |
+ * | annotation | 0.40 – 0.50 |
+ * | text | 0.70 |
+ *
+ * A conservative automatic gate is the right shape when everything below it is
+ * still available to a step that verifies claims against real geometry.
+ * **No per-kind thresholds**: the spread above is one drawing and one sample,
+ * which is enough to justify keeping a gate and nowhere near enough to justify
+ * six of them.
  */
 export const READING_CONFIDENCE_THRESHOLD = 0.8;
+
+/**
+ * Whether an observation may be acted on without anything else confirming it.
+ *
+ * The predicate form of the rule above, exported so a consumer applies the same
+ * gate this package documents rather than comparing against a number it chose.
+ * Everything else is still a real observation — it needs the resolver, or a
+ * person, to confirm it.
+ */
+export function isAutomaticallyEligible(observation: PlanObservation): boolean {
+  return observation.confidence >= READING_CONFIDENCE_THRESHOLD;
+}
 
 export interface ReadPlanRequest {
   readonly image: PlanVisionImage;
@@ -378,36 +418,32 @@ export async function readPlan(
     if (blocker !== undefined) blockers.push(blocker);
   }
 
+  /*
+   * Every well-formed observation is kept, whatever its confidence.
+   *
+   * **Confidence controls automatic eligibility, not semantic existence**
+   * (Sprint 1.10b). This loop had two earlier shapes and both were wrong for the
+   * same reason — they decided here what only the resolver can decide:
+   *
+   * - Sprint 1.9 refused the **whole reading** if any observation was doubtful,
+   *   which on real drawings refuses every reading, because a wall claim
+   *   measures 0.45–0.60;
+   * - Sprint 1.10 turned each doubtful observation into a blocker, which is not
+   *   silent but still throws the claim away — including the `separates` claims
+   *   that recovered five real partitions in 046.7u.
+   *
+   * A low-confidence claim is cheap to keep and expensive to lose: it either
+   * selects substrate geometry, in which case something exact confirms it, or it
+   * selects nothing and dies quietly. It cannot invent geometry — nothing in this
+   * layer or the next can (ADR-0044 Rule 12).
+   *
+   * `blockers` therefore carries **only what the model said it could not
+   * determine**, which is what the field means. Consumers gate with
+   * `isAutomaticallyEligible`.
+   */
   for (const entry of parsed.observations) {
     const observation = toObservation(entry);
-    if (observation === undefined) continue;
-
-    if (observation.confidence < READING_CONFIDENCE_THRESHOLD) {
-      /*
-       * Rule 5 — low confidence is a blocker, not a guess.
-       *
-       * Until Sprint 1.10 this refused the **whole** reading, on the ground that
-       * a plan silently missing the walls the model was unsure of is a plan with
-       * holes in it, and the holes are exactly where a user would have looked
-       * twice. That objection was about *silence*, and the contract now has a
-       * field for saying so — so the doubtful observation is named here rather
-       * than either acted on or dropped.
-       *
-       * Nothing low-confidence reaches a caller either way. The host applies the
-       * same threshold in `judgeObservations` and already produces per-item
-       * blockers, so this aligns the two rather than relaxing either.
-       */
-      blockers.push({
-        reason: PLAN_READING_BLOCKER_REASONS.LowConfidence,
-        detail: {
-          kind: observation.kind,
-          confidence: observation.confidence,
-          threshold: READING_CONFIDENCE_THRESHOLD
-        }
-      });
-      continue;
-    }
-    observations.push(observation);
+    if (observation !== undefined) observations.push(observation);
   }
 
   // Text the document stated, added after the model's own output and never

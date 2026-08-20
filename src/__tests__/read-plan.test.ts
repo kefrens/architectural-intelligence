@@ -26,6 +26,7 @@ import {
 } from '@archisimple/ai-engine';
 import { PLAN_BLOCKER_REASONS } from '../planning/index.js';
 import {
+  isAutomaticallyEligible,
   READING_CONFIDENCE_THRESHOLD,
   readPlan,
   type ReadPlanRequest
@@ -408,42 +409,101 @@ describe('blockers survive parsing (ADR-0027.1 Rule 8)', () => {
   });
 });
 
-describe('confidence is a blocker, not a filter (Rule 5)', () => {
-  it('names a doubtful observation instead of emitting it', async () => {
-    // It is not acted on and it is not silently dropped. Until Sprint 1.10 the
-    // whole reading was refused, on the ground that a plan silently missing
-    // what the model was unsure of has holes exactly where a user would have
-    // looked twice — that objection was about silence, and the contract now has
-    // a field for saying so.
-    const outcome = await readPlan(request, porting(replyWith(wall(0.94), wall(0.6))));
+describe('confidence controls automatic eligibility, not semantic existence', () => {
+  it('keeps a low-confidence wall in the reading, ineligible but present', async () => {
+    // The governing rule of Sprint 1.10b. Every wall claim measured on a real
+    // drawing sat at 0.45–0.60, and those are the claims that recovered five
+    // real partitions in 046.7u. Dropping them here would throw away the
+    // evidence the resolver exists to test.
+    const outcome = await readPlan(request, porting(replyWith(wall(0.94), wall(0.5))));
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.reading.observations).toHaveLength(1);
-    expect(outcome.reading.blockers).toHaveLength(1);
-    expect(outcome.reading.blockers[0]).toMatchObject({
-      reason: 'low-confidence',
-      detail: { kind: 'wall', confidence: 0.6, threshold: READING_CONFIDENCE_THRESHOLD }
-    });
+    expect(outcome.reading.observations).toHaveLength(2);
+    expect(outcome.reading.observations.map(isAutomaticallyEligible)).toEqual([true, false]);
   });
 
-  it('accepts a reading exactly at the threshold', async () => {
-    const outcome = await readPlan(request, porting(replyWith(wall(READING_CONFIDENCE_THRESHOLD))));
+  it('does not convert low confidence into a blocker', async () => {
+    // The shape Sprint 1.10 had, and the one this replaces: not silent, but
+    // still throwing the claim away. `blockers` means "the model could not
+    // determine this", and nothing else may quietly join it.
+    const outcome = await readPlan(request, porting(replyWith(wall(0.2), wall(0.5))));
 
-    expect(outcome.ok && outcome.reading.observations).toHaveLength(1);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.blockers).toEqual([]);
+    expect(outcome.reading.observations).toHaveLength(2);
   });
 
-  it('blocks the whole reading when nothing clears the threshold', async () => {
-    const outcome = await readPlan(request, porting(replyWith(wall(0.6), wall(0.5))));
+  it('discards nothing across the whole measured confidence range', async () => {
+    // The distribution actually observed, kind by kind: space 0.85+, dimension
+    // 0.55–0.70, wall 0.45–0.60, opening 0.40–0.60, annotation 0.40–0.50,
+    // text 0.70. Exactly one clears the gate; all six survive the reading.
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyWith(
+          { kind: 'space', label: 'SEJOUR', region: REGION, confidence: 0.85 },
+          { kind: 'dimension', text: '3,40', region: REGION, confidence: 0.55 },
+          wall(0.45),
+          { kind: 'opening', symbol: 'door', region: REGION, confidence: 0.4 },
+          { kind: 'annotation', annotationKind: 'furniture', region: REGION, confidence: 0.4 },
+          { kind: 'text', at: { x: 1, y: 2 }, text: 'RDC', confidence: 0.7 }
+        )
+      )
+    );
 
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.blocker.reason).toBe(PLAN_BLOCKER_REASONS.NothingToDo);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.observations).toHaveLength(6);
+    expect(outcome.reading.blockers).toEqual([]);
+    expect(outcome.reading.observations.filter(isAutomaticallyEligible)).toHaveLength(1);
+    expect(outcome.reading.observations.filter(isAutomaticallyEligible)[0]?.kind).toBe('space');
   });
 
-  it('rejects a confidence that is not one, rather than clamping it', async () => {
-    // A model that answered `NaN` has told us nothing, and clamping would
-    // manufacture the certainty the threshold exists to withhold.
+  it('lets a space above the threshold proceed automatically', async () => {
+    const outcome = await readPlan(
+      request,
+      porting(replyWith({ kind: 'space', label: 'CHAMBRE 1', region: REGION, confidence: 0.85 }))
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(isAutomaticallyEligible(outcome.reading.observations[0]!)).toBe(true);
+  });
+
+  it('gates at exactly the threshold, and it is one global number', async () => {
+    // A single gate, not one per kind: the measured spread is one drawing and
+    // one sample, which justifies keeping a gate and not six of them.
+    const just = READING_CONFIDENCE_THRESHOLD;
+    const under = READING_CONFIDENCE_THRESHOLD - 0.01;
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyWith(
+          { kind: 'space', label: 'A', region: REGION, confidence: just },
+          { kind: 'space', label: 'B', region: REGION, confidence: under },
+          wall(just),
+          wall(under)
+        )
+      )
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // Same boundary for every kind — a per-kind threshold would break this.
+    expect(outcome.reading.observations.map(isAutomaticallyEligible)).toEqual([
+      true,
+      false,
+      true,
+      false
+    ]);
+  });
+
+  it('still refuses a confidence that is not one, rather than clamping it', async () => {
+    // Unchanged by 1.10b. A model that answered `NaN` has told us nothing, and
+    // clamping would manufacture certainty. This is malformed output, which is
+    // a different thing from low confidence.
     for (const confidence of [5, -1, Number.NaN, 'high', null, undefined]) {
       const outcome = await readPlan(
         request,
@@ -451,6 +511,66 @@ describe('confidence is a blocker, not a filter (Rule 5)', () => {
       );
       expect(outcome.ok && outcome.reading.observations).toHaveLength(1);
     }
+  });
+
+  it('still blocks when nothing at all could be read', async () => {
+    // The one remaining whole-reading refusal, and it is about emptiness rather
+    // than doubt: returning nothing and reporting success is indistinguishable
+    // from failing.
+    const outcome = await readPlan(request, porting(replyWith({ kind: 'staircase' })));
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.blocker.reason).toBe(PLAN_BLOCKER_REASONS.NothingToDo);
+  });
+});
+
+describe('a low-confidence claim is harmless (ADR-0044 Rule 12)', () => {
+  it('creates no geometry, at any confidence', async () => {
+    // The claim carries a region and a relationship; neither is geometry, and
+    // there is no field in which geometry could arrive. A claim that selects no
+    // substrate simply promotes nothing — it cannot invent a wall, because
+    // nothing in this layer can express one.
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyWith(
+          wall(0.05, { separates: ['NOWHERE', 'NOTHING'] }),
+          wall(0.99, { separates: ['ALSO NOWHERE', 'STILL NOTHING'] })
+        )
+      )
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(JSON.stringify(outcome.reading)).not.toMatch(/"(from|to)"\s*:/);
+    for (const observation of outcome.reading.observations) {
+      expect(observation).not.toHaveProperty('from');
+      expect(observation).not.toHaveProperty('to');
+      // A region is a box. It has no endpoints and cannot be read as a line.
+      expect(Object.keys((observation as { region: object }).region).sort()).toEqual([
+        'height',
+        'width',
+        'x',
+        'y'
+      ]);
+    }
+  });
+
+  it('names spaces that may not exist, and that is the resolver’s problem', async () => {
+    // `separates` is a claim, not an assertion of fact. Nothing here checks that
+    // the rooms exist — the resolver either finds geometry on their shared
+    // boundary or finds none, and finding none costs nothing.
+    const outcome = await readPlan(
+      request,
+      porting(replyWith(wall(0.5, { separates: ['ROOM THAT IS NOT ON THE PLAN', 'SEJOUR'] })))
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.observations[0]).toMatchObject({
+      separates: [{ label: 'ROOM THAT IS NOT ON THE PLAN' }, { label: 'SEJOUR' }]
+    });
   });
 });
 
@@ -510,11 +630,14 @@ describe('every refusal is a PlanBlocker (ADR-0027.1 Rule 8)', () => {
   });
 
   it('offers a way forward on every blocker', async () => {
+    // The four ways a reading can fail outright. Low confidence is deliberately
+    // NOT among them since Sprint 1.10b — a 0.2 wall is a kept observation, not
+    // a refusal.
     const outcomes = await Promise.all([
       readPlan(request, undefined),
       readPlan(request, porting('not json')),
       readPlan(request, porting(replyWith())),
-      readPlan(request, porting(replyWith(wall(0.2))))
+      readPlan(request, porting(replyWith({ kind: 'staircase' })))
     ]);
 
     for (const outcome of outcomes) {

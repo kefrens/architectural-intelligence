@@ -403,11 +403,29 @@ export async function readPlan(
 
   const parsed = parseReply(reply.text);
   if (parsed === undefined) {
-    return blocked(
-      PLAN_BLOCKER_REASONS.Unsupported,
-      'The model did not answer with a reading of the drawing.',
-      ['Try again.', 'Trace the plan by hand over the placed drawing.']
-    );
+    /*
+     * Cut off and malformed both land here, and they are not the same problem
+     * (Sprint 1.12). A fragment stops mid-object, so it fails to parse however
+     * well the model was answering — which is exactly what happened the first
+     * time a real plan was read: ten correctly-labelled rooms, truncated at the
+     * provider's default limit, reported as "the model did not answer". The
+     * suggestion that follows has to differ, because only one of these is
+     * something the person reading it can fix.
+     */
+    return reply.truncated === true
+      ? blocked(
+          PLAN_BLOCKER_REASONS.Unsupported,
+          "The model's answer was cut off before it finished reading the drawing.",
+          [
+            'Raise the response limit configured for this provider and try again.',
+            'Trace the plan by hand over the placed drawing.'
+          ]
+        )
+      : blocked(
+          PLAN_BLOCKER_REASONS.Unsupported,
+          'The model did not answer with a reading of the drawing.',
+          ['Try again.', 'Trace the plan by hand over the placed drawing.']
+        );
   }
 
   const observations: PlanObservation[] = [];

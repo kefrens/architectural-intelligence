@@ -679,6 +679,43 @@ describe('every refusal is a PlanBlocker (ADR-0027.1 Rule 8)', () => {
     expect(outcome.blocker.suggestions.length).toBeGreaterThan(0);
   });
 
+  it('tells a cut-off answer apart from one the model wrote wrong', async () => {
+    /*
+     * Sprint 1.12. Both fail at the same `JSON.parse` and mean opposite things.
+     * The real case that forced this: a correct reading of ten rooms, truncated
+     * at the provider's default 1024-token limit, reported as "the model did not
+     * answer" — which sent the operator looking for an error the provider never
+     * logged, because there wasn't one.
+     */
+    const fragment = replyWith(wall()).slice(0, 60);
+    const truncated: PlanVisionPort = { read: vi.fn(async () => ({ text: fragment, truncated: true })) };
+
+    const cutOff = await readPlan(request, truncated);
+    const malformed = await readPlan(request, porting(fragment));
+
+    expect(cutOff.ok).toBe(false);
+    expect(malformed.ok).toBe(false);
+    if (cutOff.ok || malformed.ok) return;
+
+    // Same reason — the platform could not do it either way — different advice,
+    // because only one of these is something the reader can act on.
+    expect(cutOff.blocker.reason).toBe(PLAN_BLOCKER_REASONS.Unsupported);
+    expect(cutOff.blocker.message).not.toBe(malformed.blocker.message);
+    expect(cutOff.blocker.message).toMatch(/cut off/i);
+    expect(cutOff.blocker.suggestions.join(' ')).toMatch(/limit/i);
+    expect(malformed.blocker.suggestions.join(' ')).not.toMatch(/limit/i);
+  });
+
+  it('does not blame truncation for a reply that parsed', async () => {
+    // `truncated` is a fact about the transport, not a verdict on the reading.
+    // A whole JSON object that happens to arrive flagged still reads.
+    const whole: PlanVisionPort = {
+      read: vi.fn(async () => ({ text: replyWith(wall()), truncated: true }))
+    };
+
+    expect((await readPlan(request, whole)).ok).toBe(true);
+  });
+
   it('offers a way forward on every blocker', async () => {
     // The four ways a reading can fail outright. Low confidence is deliberately
     // NOT among them since Sprint 1.10b — a 0.2 wall is a kept observation, not

@@ -43,6 +43,23 @@ export interface PlanVisionInput {
  */
 export interface PlanVisionReply {
   readonly text: string;
+  /**
+   * The provider stopped at its output limit, so `text` is a fragment
+   * (Sprint 1.12 / ArchiSimple 047.4).
+   *
+   * A **fact about the reply**, not the provider's word for it. The host knows
+   * `finish_reason`, `stop_reason` and whatever the next provider calls it; this
+   * package knows only whether what it was handed is whole. Naming a completion
+   * vocabulary here would put provider knowledge in the one package that holds
+   * no endpoint, no credential and no HTTP client.
+   *
+   * It matters because a truncated reply and a malformed one fail at the same
+   * `JSON.parse` and mean opposite things: one is a limit to raise, the other is
+   * a model that cannot answer in the schema. Told apart, the blocker can say
+   * which — and the first real reading this caught was a correct one, cut off at
+   * 1024 tokens and reported as "the model did not answer".
+   */
+  readonly truncated?: boolean;
 }
 
 export interface PlanVisionPort {

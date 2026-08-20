@@ -57,25 +57,65 @@
  * means, not where its pixels or paths are.**
  */
 
-/** The schema the reply must satisfy, stated to the model in its own terms. */
-export const PLAN_READING_SCHEMA = `{
+/**
+ * The schema lines, one per kind, so a kind can be **withheld** rather than
+ * merely forbidden (Sprint 1.11b).
+ *
+ * ## Why this is a list and not a string
+ *
+ * Sprint 1.11 removed the dimension bullet from the instruction and added an
+ * explicit *"do NOT report `text` or `dimension` observations"*, and the model
+ * emitted 55 dimension observations anyway — measured, five readings out of five
+ * (ArchiSimple 046.7y Y1).
+ *
+ * **A negative instruction loses to a schema that still shows the field.** The
+ * schema is what the reply is shaped against; prose asking for less is advice,
+ * and the shape is the requirement. So a kind that must not be reported is
+ * removed from the schema instead of argued about.
+ *
+ * That is the same enforcement-by-impoverishment the contract itself uses — a
+ * `WallObservation` has no `from` because a field that exists is a field
+ * something will fill — applied one layer out, to the prompt.
+ */
+const SCHEMA_LINES = {
+  space:
+    '    { "kind": "space",      "label": "AS PRINTED", "region": {"x":0,"y":0,"width":0,"height":0}, "confidence": 0.0 }',
+  wall: `    { "kind": "wall",       "wallKind": "loadBearing|external|partition|unknown",
+                            "region": {"x":0,"y":0,"width":0,"height":0},
+                            "separates": ["LABEL A", "LABEL B"], "confidence": 0.0 }`,
+  opening: `    { "kind": "opening",    "symbol": "door|window",
+                            "region": {"x":0,"y":0,"width":0,"height":0},
+                            "connects": ["LABEL A", "LABEL B"], "confidence": 0.0 }`,
+  dimension: `    { "kind": "dimension",  "text": "as printed",
+                            "region": {"x":0,"y":0,"width":0,"height":0},
+                            "measures": "LABEL", "confidence": 0.0 }`,
+  annotation: `    { "kind": "annotation", "annotationKind": "text|symbol|furniture|titleBlock|northArrow",
+                            "region": {"x":0,"y":0,"width":0,"height":0}, "confidence": 0.0 }`,
+  text: '    { "kind": "text",       "at": {"x":0,"y":0}, "text": "as printed", "confidence": 0.0 }'
+} as const;
+
+const schemaFor = (kinds: readonly (keyof typeof SCHEMA_LINES)[]): string =>
+  `{
   "observations": [
-    { "kind": "space",      "label": "AS PRINTED", "region": {"x":0,"y":0,"width":0,"height":0}, "confidence": 0.0 },
-    { "kind": "wall",       "wallKind": "loadBearing|external|partition|unknown",
-                            "region": {"x":0,"y":0,"width":0,"height":0},
-                            "separates": ["LABEL A", "LABEL B"], "confidence": 0.0 },
-    { "kind": "opening",    "symbol": "door|window",
-                            "region": {"x":0,"y":0,"width":0,"height":0},
-                            "connects": ["LABEL A", "LABEL B"], "confidence": 0.0 },
-    { "kind": "dimension",  "text": "as printed",
-                            "region": {"x":0,"y":0,"width":0,"height":0},
-                            "measures": "LABEL", "confidence": 0.0 },
-    { "kind": "annotation", "annotationKind": "text|symbol|furniture|titleBlock|northArrow",
-                            "region": {"x":0,"y":0,"width":0,"height":0}, "confidence": 0.0 },
-    { "kind": "text",       "at": {"x":0,"y":0}, "text": "as printed", "confidence": 0.0 }
+${kinds.map((kind) => SCHEMA_LINES[kind]).join(',\n')}
   ],
   "blockers": [ { "reason": "low-confidence|not-stated", "detail": {} } ]
 }`;
+
+/**
+ * The full schema — every kind the vocabulary has.
+ *
+ * What a **raster** is asked for, and the shape of the contract as a whole. A
+ * document that states its own text is asked for less; see `schemaFor`.
+ */
+export const PLAN_READING_SCHEMA = schemaFor([
+  'space',
+  'wall',
+  'opening',
+  'dimension',
+  'annotation',
+  'text'
+]);
 
 /** One text run the document itself states, with its exact position. */
 export interface SuppliedTextRun {
@@ -103,6 +143,33 @@ export interface PlanReadingPromptInput {
  * The page's pixel dimensions are stated because a region is meaningless without
  * them, and because a model told the frame is less likely to answer in a
  * normalised one it invented.
+ *
+ * ## Why dimensions are asked for only on a raster (Sprint 1.11, ArchiSimple
+ * 046.7y Y1)
+ *
+ * On a document that states its own text, a dimension needs **no model
+ * involvement at all**, and asking for one is asking for work two proven Skills
+ * already do:
+ *
+ * - `parseDimensionText` decides deterministically whether a printed string *is*
+ *   a dimension — it refuses a room name, and that refusal is the answer;
+ * - `associateDimensions` decides what each one is about, from positions the
+ *   document states exactly.
+ *
+ * ADR-0044 Rule 4 and ADR-0027.1 Rule 9 put both there rather than in a model.
+ * The supplied runs already reach the host as `TextObservation`s with
+ * `source: 'document'`, and `measureReading` already reads a length from either
+ * a `dimension` or a `text` observation — so nothing downstream loses anything.
+ *
+ * It was measured before it was changed. On `Plan_BBA_Claude`, **55 of the
+ * model's 97 observations were `dimension`, and all 55 duplicated a supplied
+ * run** — 56 % of the reply's bytes spent transcribing our own input back to us,
+ * which overran the output limit and truncated the reading mid-array
+ * (ArchiSimple Sprint 046.7x §9.8).
+ *
+ * **A raster still needs them**, because nothing there states the text, which is
+ * why this is a condition rather than a deletion. Same vocabulary, different
+ * producer — ADR-0044 Rule 11.
  */
 export function planReadingInstruction(input: PlanReadingPromptInput): string {
   const supplied = input.documentText ?? [];
@@ -123,8 +190,10 @@ export function planReadingInstruction(input: PlanReadingPromptInput): string {
             (run) => `  "${run.text}" at (${Math.round(run.x)}, ${Math.round(run.y)})`
           ),
           '--- END DOCUMENT TEXT ---',
-          'Use these labels verbatim. Do NOT transcribe text yourself and do not',
-          'report "text" observations — they are already known.',
+          'Use these labels verbatim. Do NOT transcribe text yourself, and do NOT',
+          'report "text" or "dimension" observations — every printed string above',
+          'is already known, and which of them are dimensions, and what each one',
+          'measures, are computed from these positions afterwards.',
           ''
         ];
 
@@ -136,7 +205,12 @@ export function planReadingInstruction(input: PlanReadingPromptInput): string {
     'Report what the drawing MEANS. Reply with JSON matching this shape and',
     'nothing else:',
     '',
-    PLAN_READING_SCHEMA,
+    // Withheld, not forbidden. When the document states its own text, `text` and
+    // `dimension` are absent from the shape the reply is written against —
+    // asking for less in prose did not work (see `SCHEMA_LINES`).
+    supplied.length === 0
+      ? PLAN_READING_SCHEMA
+      : schemaFor(['space', 'wall', 'opening', 'annotation']),
     '',
     'Report:',
     '- every room, by the name printed in it. "region" is a COARSE bounding box',
@@ -149,8 +223,15 @@ export function planReadingInstruction(input: PlanReadingPromptInput): string {
     '- for each wall, whether it is loadBearing, external, partition, or unknown.',
     '  Use "unknown" rather than choosing between the others;',
     '- every door and window, and which two rooms it connects;',
-    '- every printed dimension, transcribed exactly, including its decimal',
-    '  separator and any unit — "3,40" stays "3,40";',
+    // Asked only when the document does not already state its own text. See the
+    // note on the function below: on a document with a text layer this bullet is
+    // work two Skills already do, and it was 57 % of the reply.
+    ...(supplied.length === 0
+      ? [
+          '- every printed dimension, transcribed exactly, including its decimal',
+          '  separator and any unit — "3,40" stays "3,40";'
+        ]
+      : []),
     '- every mark that is NOT part of the building: labels, symbols, furniture,',
     '  the title block, the north arrow.',
     '',

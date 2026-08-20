@@ -365,6 +365,56 @@ describe('text carries where it came from (Rule 11)', () => {
 
     expect(instruction).not.toContain('BEGIN DOCUMENT TEXT');
   });
+
+  it('stops asking for dimensions once the document states its own text', async () => {
+    // Sprint 1.11 / ArchiSimple 046.7y Y1. On a text-layer document a dimension
+    // needs no model involvement: `parseDimensionText` decides deterministically
+    // whether a string is one, and `associateDimensions` decides what it is
+    // about. Asking anyway cost 55 of 97 observations and truncated the reading.
+    const withText = await instructionOf(porting(replyWith(wall())), {
+      ...request,
+      documentText: [{ text: '3,40', x: 1, y: 2 }]
+    });
+
+    expect(withText).toMatch(/do NOT\s*\n?\s*report "text" or "dimension" observations/i);
+    expect(withText).not.toMatch(/every printed dimension, transcribed exactly/i);
+  });
+
+  it('WITHHOLDS dimension and text from the schema, rather than forbidding them', async () => {
+    // Sprint 1.11b. Removing the bullet and adding an explicit prohibition was
+    // measured and did NOT work: the model emitted 55 dimension observations
+    // anyway, five readings out of five. A negative instruction loses to a
+    // schema that still shows the field, so the field is withheld instead.
+    const withText = await instructionOf(porting(replyWith(wall())), {
+      ...request,
+      documentText: [{ text: '3,40', x: 1, y: 2 }]
+    });
+
+    expect(withText).not.toContain('"kind": "dimension"');
+    expect(withText).not.toContain('"kind": "text"');
+    // The kinds that remain a model's job are untouched.
+    for (const kind of ['space', 'wall', 'opening', 'annotation']) {
+      expect(withText).toContain(`"kind": "${kind}"`);
+    }
+  });
+
+  it('shows a raster the whole schema, every kind included', async () => {
+    const raster = await instructionOf(porting(replyWith(wall())));
+
+    for (const kind of Object.values(PLAN_OBSERVATION_KINDS)) {
+      expect(raster).toContain(`"kind": "${kind}"`);
+    }
+  });
+
+  it('still asks for dimensions on a raster, where nothing else can read them', async () => {
+    // The condition is the point: same vocabulary, different producer
+    // (ADR-0044 Rule 11). Deleting the bullet outright would blind the raster
+    // path, which has no text layer to fall back on.
+    const raster = await instructionOf(porting(replyWith(wall())));
+
+    expect(raster).toMatch(/every printed dimension, transcribed exactly/i);
+    expect(raster).toMatch(/"3,40" stays "3,40"/);
+  });
 });
 
 describe('blockers survive parsing (ADR-0027.1 Rule 8)', () => {

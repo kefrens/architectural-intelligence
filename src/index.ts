@@ -407,14 +407,24 @@ export {
 } from './constraints/index.js';
 
 /**
- * Reading a drawing (Sprint 1.9).
+ * Reading a drawing (Sprint 1.9; semantic since 1.10).
  *
  * The one place a model appears in the extraction arc. It produces observations
  * and stops: the Geometry Graph is the host's to assemble (ADR-0044 Rule 3), and
  * nothing here approves anything.
+ *
+ * **This list must mirror `reading/index.ts`.** Two exports were added there in
+ * Sprints 1.10 and 1.10b and not propagated here, which made them unreachable to
+ * every consumer of this package — `SuppliedTextRun`, the element type a host
+ * needs to build `ReadPlanRequest.documentText` at all, and
+ * `isAutomaticallyEligible`, which is the *only* published statement of what the
+ * confidence threshold means. Neither omission could fail a test, because
+ * nothing in this repository imports from its own root. ArchiSimple Sprint
+ * 046.7x found them by trying to consume the package the way a host does.
  */
 export {
   readPlan,
+  isAutomaticallyEligible,
   planReadingInstruction,
   PLAN_READING_SCHEMA,
   READING_CONFIDENCE_THRESHOLD,
@@ -424,5 +434,6 @@ export {
   type PlanVisionPort,
   type PlanVisionReply,
   type ReadPlanOutcome,
-  type ReadPlanRequest
+  type ReadPlanRequest,
+  type SuppliedTextRun
 } from './reading/index.js';

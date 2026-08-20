@@ -1,25 +1,35 @@
 /**
- * A page becomes observations, and stops there (Sprint 1.9; ADR-0044
- * revision 1.1 Rules 1, 3, 4, 5).
+ * A page becomes **semantic** observations, and stops there (Sprint 1.9;
+ * rewritten by Sprint 1.10 / ArchiSimple 046.7w. ADR-0044 revision 1.4
+ * Rules 1, 3, 4, 5, 11, 12).
  *
  * ```text
  * page raster ──▶ instruction ──▶ [ host's port ] ──▶ structured reply
- *                                                          │
- *                                                          ▼
- *                                                  PlanReading, or a blocker
+ *   (+ document text, if the document has any)              │
+ *                                                           ▼
+ *                                                   PlanReading, or a blocker
  * ```
  *
  * ## Where this stops, and why the stop is the design
  *
- * At observations. It assembles **no artefact** — the Geometry Graph is composed
- * by the host, field by field, from these (Rule 3, ArchiSimple Sprint 046.7). It
- * produces **no `Proposal`**: a proposal is what the host makes of a reading, and
- * ADR-0027.1 Rule 7's one approval mechanism stays one.
+ * At observations, and now at *semantic* ones. It assembles **no artefact** —
+ * the Geometry Graph is composed by the host, field by field (Rule 3). It
+ * produces **no `Proposal`**: a proposal is what the host makes of a reading,
+ * and ADR-0027.1 Rule 7's one approval mechanism stays one.
  *
- * It computes **nothing**. Not a length, not an angle, not an area, not an
- * association. All six of those are Skills that already exist and are already
- * proven (ArchiSimple Sprint 046.6), and Rule 9 puts them there rather than here
- * and *emphatically* rather than in the model.
+ * It computes **nothing**, and since Sprint 1.10 it **locates nothing**. Not a
+ * length, not an angle, not an area, not an association, and not a coordinate.
+ * Rule 11: the model is never the geometric source, for any document. Geometry
+ * comes from the document's own paths or from ink discovered in the raster, and
+ * a semantic claim is what selects among it (Rule 12).
+ *
+ * ## The parser is the boundary
+ *
+ * Every field is checked, and **a reply that offers geometry is refused rather
+ * than trimmed**. `toObservation` returning `undefined` for a wall carrying
+ * `from`/`to` is not defensiveness about malformed JSON — it is the one place
+ * where a model could reintroduce the coordinates ADR-0044 spent six sprints
+ * removing, and where doing so would look like a small compatibility kindness.
  *
  * ## Not a Tool, and not a lane
  *
@@ -27,30 +37,40 @@
  * "read this drawing" is circular — the drawing is what it is being shown.
  *
  * **Not a lane.** The nine lanes classify an *utterance*. This is not one: nobody
- * typed anything and there is nothing to disambiguate. The host has a page and
- * wants it read. Routing it through the classifier would mean inventing a
- * sentence to classify, and invented plumbing reads as a feature later.
+ * typed anything and there is nothing to disambiguate. Routing it through the
+ * classifier would mean inventing a sentence to classify, and invented plumbing
+ * reads as a feature later.
  *
  * It is a capability the host asks for directly.
  */
 
 import {
+  ANNOTATION_KINDS,
+  OBSERVED_WALL_KINDS,
   PLAN_OBSERVATION_KINDS,
-  type ObservedPoint,
+  PLAN_READING_BLOCKER_REASONS,
+  TEXT_SOURCES,
+  type AnchorRef,
+  type AnnotationKind,
+  type ObservedRegion,
+  type ObservedWallKind,
   type PlanObservation,
-  type PlanReading
+  type PlanReading,
+  type PlanReadingBlocker
 } from '@archisimple/ai-engine';
 import { PLAN_BLOCKER_REASONS, type PlanBlocker } from '../planning/index.js';
-import { planReadingInstruction } from './plan-reading-prompt.js';
+import { planReadingInstruction, type SuppliedTextRun } from './plan-reading-prompt.js';
 import type { PlanVisionImage, PlanVisionPort } from './plan-vision-port.js';
 
 /**
  * How sure an observation must be to be used.
  *
  * The same 0.8 the host's `judgeObservations` applies (ArchiSimple Sprint
- * 046.4). Stated here because a reading is refused *before* it travels, and a
- * caller that never sees a low-confidence observation cannot accidentally act
- * on one (Rule 5 — low confidence is a blocker, not a guess).
+ * 046.4), deliberately **unchanged** by Sprint 1.10 even though the measured
+ * confidence distribution sits mostly below it — 046.7s found the 0.5–0.6 band
+ * close to a coin toss and 4 of 4 correct above 0.85. Recalibrating a threshold
+ * to admit more of a small sample is how a measurement becomes a guarantee, so
+ * the number stays and §"what happens below it" changes instead.
  */
 export const READING_CONFIDENCE_THRESHOLD = 0.8;
 
@@ -58,6 +78,15 @@ export interface ReadPlanRequest {
   readonly image: PlanVisionImage;
   /** Which page this is, carried through so a reading can be placed. */
   readonly pageIndex: number;
+  /**
+   * Text the document itself states (ADR-0044 Rule 11).
+   *
+   * Present for a document with a text layer, absent for a raster. Supplied to
+   * the model as **data** and emitted as observations with
+   * `source: 'document'` — this package neither opens the file nor extracts
+   * them; the host does, because the host is what holds the document.
+   */
+  readonly documentText?: readonly SuppliedTextRun[];
 }
 
 export type ReadPlanOutcome =
@@ -70,7 +99,10 @@ const blocked = (
   suggestions: readonly string[]
 ): ReadPlanOutcome => ({ ok: false, blocker: { reason, message, suggestions } });
 
-const isPoint = (value: unknown): value is ObservedPoint => {
+const isConfidence = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+
+const isPoint = (value: unknown): value is { x: number; y: number } => {
   const point = value as { x?: unknown; y?: unknown } | null;
   return (
     point !== null &&
@@ -80,69 +112,202 @@ const isPoint = (value: unknown): value is ObservedPoint => {
   );
 };
 
-const isConfidence = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+/**
+ * A coarse box, or nothing.
+ *
+ * A negative or non-finite extent is refused rather than clamped: a region is a
+ * filter over candidates, and one with a `NaN` width matches everything or
+ * nothing depending on which comparison runs first.
+ */
+const toRegion = (value: unknown): ObservedRegion | undefined => {
+  const box = value as { x?: unknown; y?: unknown; width?: unknown; height?: unknown } | null;
+  if (box === null || typeof box !== 'object') return undefined;
+  const { x, y, width, height } = box;
+  if (![x, y, width, height].every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    return undefined;
+  }
+  if ((width as number) < 0 || (height as number) < 0) return undefined;
+  return {
+    x: x as number,
+    y: y as number,
+    width: width as number,
+    height: height as number
+  };
+};
+
+/**
+ * Two named things, or nothing.
+ *
+ * The wire carries plain strings and the contract carries `AnchorRef`s; that
+ * conversion is this function and it is the only place it happens. A pair of one
+ * is not a relationship, and a blank label anchors nothing.
+ */
+const toPair = (value: unknown): readonly [AnchorRef, AnchorRef] | undefined => {
+  if (!Array.isArray(value) || value.length !== 2) return undefined;
+  const [first, second] = value;
+  if (typeof first !== 'string' || typeof second !== 'string') return undefined;
+  if (first.trim() === '' || second.trim() === '') return undefined;
+  // Not normalised, not upper-cased, not trimmed to a canonical form: matching a
+  // label to a space is the host's, and normalising twice is how two spellings
+  // of one room become two rooms.
+  return [{ label: first }, { label: second }];
+};
+
+const isWallKind = (value: unknown): value is ObservedWallKind =>
+  typeof value === 'string' &&
+  (Object.values(OBSERVED_WALL_KINDS) as readonly string[]).includes(value);
+
+const isAnnotationKind = (value: unknown): value is AnnotationKind =>
+  typeof value === 'string' &&
+  (Object.values(ANNOTATION_KINDS) as readonly string[]).includes(value);
 
 /**
  * One entry of the reply, or `undefined` if it is not an observation.
  *
  * Every field is checked. A reply is a model's output, so "it has a `kind`,
- * therefore the rest is there" is not a safe read — and an observation missing
- * a coordinate would place a wall at `NaN`, which draws nothing and reports
- * success.
+ * therefore the rest is there" is not a safe read.
+ *
+ * **A wall that carries `from`/`to` is refused outright**, not stripped. Under
+ * ADR-0044 Rule 11 a model has no coordinates to give; one that offers them has
+ * misunderstood the instruction, and everything else it said about that wall is
+ * suspect for the same reason. Silently keeping the `region` and dropping the
+ * endpoints would turn a misunderstanding into a plausible observation.
  *
  * **Unknown fields are dropped rather than carried.** A model that volunteers a
  * `length` is offering a number Rule 4 forbids, and letting it through the
  * boundary because the type does not mention it is how it ends up read by
  * something later.
  */
-function toObservation(entry: unknown): PlanObservation | undefined {
+export function toObservation(entry: unknown): PlanObservation | undefined {
   const value = entry as Record<string, unknown> | null;
   if (value === null || typeof value !== 'object' || !isConfidence(value.confidence)) {
     return undefined;
   }
   const confidence = value.confidence;
 
-  if (value.kind === PLAN_OBSERVATION_KINDS.Wall && isPoint(value.from) && isPoint(value.to)) {
-    return {
-      kind: PLAN_OBSERVATION_KINDS.Wall,
-      from: { x: value.from.x, y: value.from.y },
-      to: { x: value.to.x, y: value.to.y },
-      confidence
-    };
+  // Rule 11, enforced at the one place it can be. Applies to every kind: no
+  // observation in this vocabulary has endpoints, so any entry claiming them is
+  // answering a question that was not asked.
+  if ('from' in value || 'to' in value) {
+    return undefined;
   }
+
+  const region = toRegion(value.region);
+
+  switch (value.kind) {
+    case PLAN_OBSERVATION_KINDS.Space: {
+      if (region === undefined || typeof value.label !== 'string' || value.label.trim() === '') {
+        return undefined;
+      }
+      return { kind: PLAN_OBSERVATION_KINDS.Space, label: value.label, region, confidence };
+    }
+
+    case PLAN_OBSERVATION_KINDS.Wall: {
+      if (region === undefined || !isWallKind(value.wallKind)) return undefined;
+      const separates = toPair(value.separates);
+      // Absent or unusable `separates` is not a failure: a wall the model can
+      // see but cannot attribute is a real reading, and Rule 12 leaves it
+      // unresolved rather than letting the host guess at proximity.
+      return separates === undefined
+        ? { kind: PLAN_OBSERVATION_KINDS.Wall, wallKind: value.wallKind, region, confidence }
+        : {
+            kind: PLAN_OBSERVATION_KINDS.Wall,
+            wallKind: value.wallKind,
+            region,
+            separates,
+            confidence
+          };
+    }
+
+    case PLAN_OBSERVATION_KINDS.Opening: {
+      if (region === undefined || typeof value.symbol !== 'string' || value.symbol.trim() === '') {
+        return undefined;
+      }
+      const connects = toPair(value.connects);
+      return connects === undefined
+        ? { kind: PLAN_OBSERVATION_KINDS.Opening, symbol: value.symbol, region, confidence }
+        : {
+            kind: PLAN_OBSERVATION_KINDS.Opening,
+            symbol: value.symbol,
+            region,
+            connects,
+            confidence
+          };
+    }
+
+    case PLAN_OBSERVATION_KINDS.Dimension: {
+      if (region === undefined || typeof value.text !== 'string') return undefined;
+      const measures =
+        typeof value.measures === 'string' && value.measures.trim() !== ''
+          ? { label: value.measures }
+          : undefined;
+      // Exactly as read. Not trimmed of its unit, not normalised, not parsed —
+      // `parseDimensionText` does all three, deterministically and later.
+      return measures === undefined
+        ? { kind: PLAN_OBSERVATION_KINDS.Dimension, text: value.text, region, confidence }
+        : {
+            kind: PLAN_OBSERVATION_KINDS.Dimension,
+            text: value.text,
+            region,
+            measures,
+            confidence
+          };
+    }
+
+    case PLAN_OBSERVATION_KINDS.Annotation: {
+      if (region === undefined || !isAnnotationKind(value.annotationKind)) return undefined;
+      return {
+        kind: PLAN_OBSERVATION_KINDS.Annotation,
+        annotationKind: value.annotationKind,
+        region,
+        confidence
+      };
+    }
+
+    case PLAN_OBSERVATION_KINDS.Text: {
+      if (!isPoint(value.at) || typeof value.text !== 'string') return undefined;
+      return {
+        kind: PLAN_OBSERVATION_KINDS.Text,
+        at: { x: value.at.x, y: value.at.y },
+        text: value.text,
+        // The model read it, so it is a reading. A run the *document* stated is
+        // added by `readPlan` below and never arrives through here.
+        source: TEXT_SOURCES.Reading,
+        confidence,
+        ...(region === undefined ? {} : { region })
+      };
+    }
+
+    default:
+      return undefined;
+  }
+}
+
+/** One thing the model could not determine, or `undefined`. */
+function toBlocker(entry: unknown): PlanReadingBlocker | undefined {
+  const value = entry as Record<string, unknown> | null;
+  if (value === null || typeof value !== 'object') return undefined;
   if (
-    value.kind === PLAN_OBSERVATION_KINDS.Opening &&
-    isPoint(value.from) &&
-    isPoint(value.to) &&
-    typeof value.symbol === 'string'
+    typeof value.reason !== 'string' ||
+    !(Object.values(PLAN_READING_BLOCKER_REASONS) as readonly string[]).includes(value.reason)
   ) {
-    return {
-      kind: PLAN_OBSERVATION_KINDS.Opening,
-      from: { x: value.from.x, y: value.from.y },
-      to: { x: value.to.x, y: value.to.y },
-      symbol: value.symbol,
-      confidence
-    };
+    return undefined;
   }
-  if (
-    value.kind === PLAN_OBSERVATION_KINDS.Text &&
-    isPoint(value.at) &&
-    typeof value.text === 'string'
-  ) {
-    // Exactly as read. Not trimmed of its unit, not normalised, not parsed.
-    return {
-      kind: PLAN_OBSERVATION_KINDS.Text,
-      at: { x: value.at.x, y: value.at.y },
-      text: value.text,
-      confidence
-    };
-  }
-  return undefined;
+  const detail = value.detail;
+  return {
+    reason: value.reason as PlanReadingBlocker['reason'],
+    // Data, never a sentence — ADR-0019 keeps translation above this layer.
+    detail: detail !== null && typeof detail === 'object' ? { ...(detail as object) } : {}
+  };
+}
+
+interface ParsedReply {
+  readonly observations: readonly unknown[];
+  readonly blockers: readonly unknown[];
 }
 
 /**
- * The reply's observations, or `undefined` if it is not a reply at all.
+ * The reply, or `undefined` if it is not a reply at all.
  *
  * Tolerates the fencing providers wrap JSON in, and nothing else. That is the
  * line ADR-0027.1 Rule 6 draws: unwrapping a code fence is reading a structured
@@ -150,13 +315,18 @@ function toObservation(entry: unknown): PlanObservation | undefined {
  * it produces a confident, wrong, partial building whose missing half is
  * invisible.
  */
-function parseObservations(text: string): unknown[] | undefined {
+function parseReply(text: string): ParsedReply | undefined {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   const candidate = (fenced?.[1] ?? text).trim();
   try {
-    const parsed: unknown = JSON.parse(candidate);
-    const observations = (parsed as { observations?: unknown } | null)?.observations;
-    return Array.isArray(observations) ? observations : undefined;
+    const parsed = JSON.parse(candidate) as { observations?: unknown; blockers?: unknown } | null;
+    if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.observations)) {
+      return undefined;
+    }
+    return {
+      observations: parsed.observations,
+      blockers: Array.isArray(parsed.blockers) ? parsed.blockers : []
+    };
   } catch {
     return undefined;
   }
@@ -184,12 +354,15 @@ export async function readPlan(
     image: request.image,
     instruction: planReadingInstruction({
       pixelWidth: request.image.pixelWidth,
-      pixelHeight: request.image.pixelHeight
+      pixelHeight: request.image.pixelHeight,
+      // Spread rather than assigned: `exactOptionalPropertyTypes` distinguishes
+      // "absent" from "present and undefined", and a raster is the former.
+      ...(request.documentText === undefined ? {} : { documentText: request.documentText })
     })
   });
 
-  const entries = parseObservations(reply.text);
-  if (entries === undefined) {
+  const parsed = parseReply(reply.text);
+  if (parsed === undefined) {
     return blocked(
       PLAN_BLOCKER_REASONS.Unsupported,
       'The model did not answer with a reading of the drawing.',
@@ -198,11 +371,57 @@ export async function readPlan(
   }
 
   const observations: PlanObservation[] = [];
-  for (const entry of entries) {
+  const blockers: PlanReadingBlocker[] = [];
+
+  for (const entry of parsed.blockers) {
+    const blocker = toBlocker(entry);
+    if (blocker !== undefined) blockers.push(blocker);
+  }
+
+  for (const entry of parsed.observations) {
     const observation = toObservation(entry);
-    if (observation !== undefined) {
-      observations.push(observation);
+    if (observation === undefined) continue;
+
+    if (observation.confidence < READING_CONFIDENCE_THRESHOLD) {
+      /*
+       * Rule 5 — low confidence is a blocker, not a guess.
+       *
+       * Until Sprint 1.10 this refused the **whole** reading, on the ground that
+       * a plan silently missing the walls the model was unsure of is a plan with
+       * holes in it, and the holes are exactly where a user would have looked
+       * twice. That objection was about *silence*, and the contract now has a
+       * field for saying so — so the doubtful observation is named here rather
+       * than either acted on or dropped.
+       *
+       * Nothing low-confidence reaches a caller either way. The host applies the
+       * same threshold in `judgeObservations` and already produces per-item
+       * blockers, so this aligns the two rather than relaxing either.
+       */
+      blockers.push({
+        reason: PLAN_READING_BLOCKER_REASONS.LowConfidence,
+        detail: {
+          kind: observation.kind,
+          confidence: observation.confidence,
+          threshold: READING_CONFIDENCE_THRESHOLD
+        }
+      });
+      continue;
     }
+    observations.push(observation);
+  }
+
+  // Text the document stated, added after the model's own output and never
+  // through the parser: it did not come from the model and is not a reading
+  // (ADR-0044 Rule 11). Confidence 1 describes **provenance, not correctness** —
+  // a text layer can be wrong where fonts are mis-mapped.
+  for (const run of request.documentText ?? []) {
+    observations.push({
+      kind: PLAN_OBSERVATION_KINDS.Text,
+      at: { x: run.x, y: run.y },
+      text: run.text,
+      source: TEXT_SOURCES.Document,
+      confidence: 1
+    });
   }
 
   if (observations.length === 0) {
@@ -219,31 +438,14 @@ export async function readPlan(
     );
   }
 
-  const uncertain = observations.filter(
-    (observation) => observation.confidence < READING_CONFIDENCE_THRESHOLD
-  );
-  if (uncertain.length > 0) {
-    // Rule 5. The whole reading is refused rather than the doubtful parts
-    // filtered out: a plan silently missing the walls the model was unsure of
-    // is a plan with holes in it, and the holes are exactly where a user would
-    // have looked twice.
-    return blocked(
-      PLAN_BLOCKER_REASONS.MissingInformation,
-      `${uncertain.length} of ${observations.length} readings from this drawing are not certain enough to build on.`,
-      [
-        'Try a higher-resolution scan of the same drawing.',
-        'Trace the plan by hand over the placed drawing.'
-      ]
-    );
-  }
-
   return {
     ok: true,
     reading: {
       pageIndex: request.pageIndex,
       pixelWidth: request.image.pixelWidth,
       pixelHeight: request.image.pixelHeight,
-      observations
+      observations,
+      blockers
     }
   };
 }

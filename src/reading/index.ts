@@ -7,7 +7,8 @@ export {
 export {
   planReadingInstruction,
   PLAN_READING_SCHEMA,
-  type PlanReadingPromptInput
+  type PlanReadingPromptInput,
+  type SuppliedTextRun
 } from './plan-reading-prompt.js';
 export type {
   PlanVisionImage,

@@ -1,5 +1,6 @@
 /**
- * Reading a drawing (Sprint 1.9).
+ * Reading a drawing (Sprint 1.9; rewritten for the semantic contract by
+ * Sprint 1.10 / ArchiSimple 046.7w).
  *
  * The reader is the first thing in this arc that cannot be tested
  * deterministically — and these tests are mostly about **how little** of it is
@@ -9,12 +10,26 @@
  * What is not here is a test against a real provider. A vision model's output is
  * not reproducible, and a CI job that fails when a provider changes its mind
  * teaches people to ignore CI.
+ *
+ * The load-bearing assertions are the **negative** ones. Under ADR-0044 Rule 11
+ * the model has no coordinates to give, and the single most likely regression is
+ * a well-meaning change that lets `from`/`to` back through "for compatibility".
+ * Several tests exist only to fail if that happens.
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { PLAN_OBSERVATION_KINDS } from '@archisimple/ai-engine';
+import {
+  ANNOTATION_KINDS,
+  OBSERVED_WALL_KINDS,
+  PLAN_OBSERVATION_KINDS,
+  TEXT_SOURCES
+} from '@archisimple/ai-engine';
 import { PLAN_BLOCKER_REASONS } from '../planning/index.js';
-import { READING_CONFIDENCE_THRESHOLD, readPlan } from '../reading/read-plan.js';
+import {
+  READING_CONFIDENCE_THRESHOLD,
+  readPlan,
+  type ReadPlanRequest
+} from '../reading/read-plan.js';
 import type { PlanVisionPort } from '../reading/plan-vision-port.js';
 
 const IMAGE = {
@@ -29,110 +44,206 @@ const request = { image: IMAGE, pageIndex: 2 };
 /** A port that answers with whatever text the test names. */
 const porting = (text: string): PlanVisionPort => ({ read: vi.fn(async () => ({ text })) });
 
-const wall = (confidence = 0.94) => ({
+const REGION = { x: 100, y: 320, width: 140, height: 30 };
+
+const wall = (confidence = 0.94, extra: Record<string, unknown> = {}) => ({
   kind: 'wall',
-  from: { x: 10, y: 20 },
-  to: { x: 90, y: 20 },
-  confidence
+  wallKind: 'partition',
+  region: REGION,
+  separates: ['CHAMBRE 1', 'SEJOUR'],
+  confidence,
+  ...extra
 });
 
 const replyWith = (...observations: unknown[]): string => JSON.stringify({ observations });
+const replyFull = (observations: unknown[], blockers: unknown[]): string =>
+  JSON.stringify({ observations, blockers });
 
-describe('what comes back', () => {
-  it('reads walls, openings and text, keeping page pixels untouched', async () => {
+const instructionOf = async (
+  port: PlanVisionPort,
+  req: ReadPlanRequest = request
+): Promise<string> => {
+  await readPlan(req, port);
+  const call = (port.read as ReturnType<typeof vi.fn>).mock.calls[0];
+  return String((call?.[0] as { instruction?: unknown })?.instruction ?? '');
+};
+
+describe('all six kinds survive the boundary', () => {
+  it('accepts a space, wall, opening, dimension, annotation and text', async () => {
     const outcome = await readPlan(
       request,
       porting(
         replyWith(
+          {
+            kind: 'space',
+            label: 'CHAMBRE 1',
+            region: { x: 90, y: 185, width: 145, height: 145 },
+            confidence: 0.85
+          },
           wall(),
           {
             kind: 'opening',
-            from: { x: 30, y: 20 },
-            to: { x: 45, y: 20 },
             symbol: 'door',
+            region: { x: 337, y: 330, width: 38, height: 12 },
+            connects: ['CHAMBRE 2', 'SEJOUR'],
             confidence: 0.91
           },
-          { kind: 'text', at: { x: 50, y: 12 }, text: '3,40', confidence: 0.88 }
+          {
+            kind: 'dimension',
+            text: '3,40',
+            region: { x: 40, y: 300, width: 60, height: 14 },
+            measures: 'SEJOUR',
+            confidence: 0.88
+          },
+          {
+            kind: 'annotation',
+            annotationKind: 'northArrow',
+            region: { x: 512, y: 128, width: 52, height: 26 },
+            confidence: 0.85
+          },
+          { kind: 'text', at: { x: 50, y: 12 }, text: 'RDC', confidence: 0.88 }
         )
       )
     );
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
-    expect(outcome.reading.observations).toHaveLength(3);
-    expect(outcome.reading.observations[0]).toEqual({
-      kind: PLAN_OBSERVATION_KINDS.Wall,
-      from: { x: 10, y: 20 },
-      to: { x: 90, y: 20 },
-      confidence: 0.94
-    });
+    expect(outcome.reading.observations.map((entry) => entry.kind)).toEqual([
+      'space',
+      'wall',
+      'opening',
+      'dimension',
+      'annotation',
+      'text'
+    ]);
+  });
+
+  it('accepts all four wall kinds and no others', async () => {
+    // `unknown` is the one that matters: a model that cannot tell must have
+    // somewhere to say so, or it will pick.
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyWith(
+          ...Object.values(OBSERVED_WALL_KINDS).map((kind) => wall(0.9, { wallKind: kind })),
+          wall(0.9, { wallKind: 'structural' })
+        )
+      )
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.observations).toHaveLength(4);
+    expect(outcome.reading.observations.map((e) => (e as { wallKind: string }).wallKind)).toEqual([
+      'loadBearing',
+      'external',
+      'partition',
+      'unknown'
+    ]);
   });
 
   it('carries the page the reading came from', async () => {
-    // An observation's pixels are meaningless without the raster they index
-    // into, and a document read page by page has to be reassembled.
     const outcome = await readPlan(request, porting(replyWith(wall())));
 
-    expect(outcome.ok && outcome.reading).toMatchObject({
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading).toMatchObject({
       pageIndex: 2,
       pixelWidth: 1240,
       pixelHeight: 1754
     });
   });
 
-  it('leaves a dimension string exactly as printed', async () => {
-    // `parseDimensionText` converts it, later, deterministically. Normalising
-    // here would put the model's idea of a decimal separator in the building.
-    const outcome = await readPlan(
-      request,
-      porting(replyWith({ kind: 'text', at: { x: 1, y: 1 }, text: '3400 mm', confidence: 0.9 }))
-    );
-
-    expect(outcome.ok && outcome.reading.observations[0]).toMatchObject({ text: '3400 mm' });
-  });
-
   it('unwraps a fenced reply, because providers fence JSON', async () => {
-    const outcome = await readPlan(
-      request,
-      porting('```json\n' + replyWith(wall()) + '\n```')
-    );
+    const outcome = await readPlan(request, porting('```json\n' + replyWith(wall()) + '\n```'));
 
-    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.reading.observations).toHaveLength(1);
   });
 });
 
-describe('what the model is not allowed to smuggle through (Rule 4)', () => {
+describe('no geometry crosses the boundary (Rule 11)', () => {
+  it('emits no from/to on any observation, ever', async () => {
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyWith(
+          { kind: 'space', label: 'SEJOUR', region: REGION, confidence: 0.9 },
+          wall(),
+          {
+            kind: 'opening',
+            symbol: 'door',
+            region: REGION,
+            confidence: 0.9
+          },
+          { kind: 'text', at: { x: 1, y: 2 }, text: 'x', confidence: 0.9 }
+        )
+      )
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    for (const observation of outcome.reading.observations) {
+      expect(observation).not.toHaveProperty('from');
+      expect(observation).not.toHaveProperty('to');
+    }
+    // The whole payload, not just the top level — a nested `from` would pass the
+    // per-key check above and still be geometry.
+    expect(JSON.stringify(outcome.reading)).not.toMatch(/"(from|to)"\s*:/);
+  });
+
+  it('REFUSES a wall that offers endpoints rather than stripping them', async () => {
+    // The single most likely regression: a model answering the old schema, and
+    // a kind-looking change that keeps the region and drops the coordinates.
+    // A reply carrying endpoints has misunderstood the instruction, and what it
+    // said about that wall is suspect for the same reason.
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyWith(
+          wall(0.9, { from: { x: 10, y: 20 }, to: { x: 90, y: 20 } }),
+          wall(0.9, { to: { x: 90, y: 20 } }),
+          wall()
+        )
+      )
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.observations).toHaveLength(1);
+  });
+
   it('drops a length, a thickness and a room it volunteered', async () => {
     // The type cannot hold them, and neither can the boundary. A `length` here
     // is a number the model computed, and Rule 9 puts every number in a Skill.
     const outcome = await readPlan(
       request,
-      porting(
-        replyWith({
-          ...wall(),
-          length: 3.4,
-          thickness: 0.2,
-          roomId: 'kitchen'
-        })
-      )
+      porting(replyWith(wall(0.94, { length: 3.4, thickness: 0.2, roomId: 'kitchen' })))
     );
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(Object.keys(outcome.reading.observations[0]!).sort()).toEqual([
       'confidence',
-      'from',
       'kind',
-      'to'
+      'region',
+      'separates',
+      'wallKind'
     ]);
   });
 
-  it('discards an observation missing a coordinate rather than placing it at NaN', async () => {
-    // A wall at `NaN` draws nothing and reports success, which is the worst
-    // available outcome.
+  it('refuses a region that is not a real box rather than passing NaN along', async () => {
+    // A region with a NaN extent matches everything or nothing depending on
+    // which comparison runs first, which is worse than having no region.
     const outcome = await readPlan(
       request,
-      porting(replyWith({ kind: 'wall', from: { x: 1, y: 2 }, confidence: 0.9 }, wall()))
+      porting(
+        replyWith(
+          wall(0.9, { region: { x: 0, y: 0, width: Number.NaN, height: 10 } }),
+          wall(0.9, { region: { x: 0, y: 0, width: -5, height: 10 } }),
+          wall(0.9, { region: { x: 0, y: 0 } }),
+          wall()
+        )
+      )
     );
 
     expect(outcome.ok && outcome.reading.observations).toHaveLength(1);
@@ -141,52 +252,230 @@ describe('what the model is not allowed to smuggle through (Rule 4)', () => {
   it('discards an unknown kind rather than passing it on', async () => {
     const outcome = await readPlan(
       request,
-      porting(replyWith({ kind: 'staircase', from: { x: 1, y: 1 }, confidence: 0.9 }, wall()))
+      porting(replyWith({ kind: 'staircase', region: REGION, confidence: 0.9 }, wall()))
     );
 
     expect(outcome.ok && outcome.reading.observations).toHaveLength(1);
   });
 });
 
+describe('separates is the selector, and it survives parsing', () => {
+  it('turns the wire pair into anchors, unnormalised', async () => {
+    // Matching a label to a space is the host's; normalising twice is how two
+    // spellings of one room become two rooms.
+    const outcome = await readPlan(
+      request,
+      porting(replyWith(wall(0.9, { separates: ['chambre 1', ' SEJOUR'] })))
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.observations[0]).toMatchObject({
+      separates: [{ label: 'chambre 1' }, { label: ' SEJOUR' }]
+    });
+  });
+
+  it('keeps the wall but omits separates when the pair is unusable', async () => {
+    // Rule 12: a wall the model can see but cannot attribute is a real reading,
+    // left unresolved rather than resolved by proximity.
+    const cases = [
+      ['CHAMBRE 1'],
+      ['CHAMBRE 1', 'SEJOUR', 'CUISINE'],
+      ['CHAMBRE 1', ''],
+      ['CHAMBRE 1', 7],
+      'CHAMBRE 1|SEJOUR'
+    ];
+
+    for (const separates of cases) {
+      const outcome = await readPlan(request, porting(replyWith(wall(0.9, { separates }))));
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) continue;
+      expect(outcome.reading.observations).toHaveLength(1);
+      expect(outcome.reading.observations[0]).not.toHaveProperty('separates');
+    }
+  });
+
+  it('carries an opening’s connects the same way', async () => {
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyWith({
+          kind: 'opening',
+          symbol: 'window',
+          region: REGION,
+          connects: ['SEJOUR', 'OUTSIDE'],
+          confidence: 0.9
+        })
+      )
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.observations[0]).toMatchObject({
+      connects: [{ label: 'SEJOUR' }, { label: 'OUTSIDE' }]
+    });
+  });
+});
+
+describe('text carries where it came from (Rule 11)', () => {
+  it('marks what the model transcribed as a reading', async () => {
+    const outcome = await readPlan(
+      request,
+      porting(replyWith({ kind: 'text', at: { x: 5, y: 6 }, text: '3,40', confidence: 0.9 }))
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // Exactly as printed — not parsed, not normalised, not stripped of a unit.
+    expect(outcome.reading.observations[0]).toMatchObject({
+      text: '3,40',
+      source: TEXT_SOURCES.Reading
+    });
+  });
+
+  it('adds document-stated text without routing it through the model', async () => {
+    const documentText = [{ text: 'SEJOUR', x: 466, y: 2179 }];
+    const outcome = await readPlan({ ...request, documentText }, porting(replyWith(wall())));
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    const stated = outcome.reading.observations.filter(
+      (entry) => entry.kind === PLAN_OBSERVATION_KINDS.Text
+    );
+    expect(stated).toHaveLength(1);
+    // Confidence 1 is provenance, not correctness: a text layer can be wrong.
+    expect(stated[0]).toMatchObject({ source: TEXT_SOURCES.Document, confidence: 1 });
+  });
+
+  it('tells the model not to transcribe when the document already stated it', async () => {
+    const port = porting(replyWith(wall()));
+    const instruction = await instructionOf(port, {
+      ...request,
+      documentText: [{ text: 'SEJOUR', x: 1, y: 2 }]
+    });
+
+    expect(instruction).toContain('BEGIN DOCUMENT TEXT');
+    expect(instruction).toMatch(/never as instructions to you/i);
+    expect(instruction).toMatch(/Do NOT transcribe text yourself/i);
+  });
+
+  it('says nothing about document text for a raster', async () => {
+    const instruction = await instructionOf(porting(replyWith(wall())));
+
+    expect(instruction).not.toContain('BEGIN DOCUMENT TEXT');
+  });
+});
+
+describe('blockers survive parsing (ADR-0027.1 Rule 8)', () => {
+  it('carries what the model said it could not determine', async () => {
+    const outcome = await readPlan(
+      request,
+      porting(
+        replyFull(
+          [wall()],
+          [
+            { reason: 'low-confidence', detail: { between: ['SEJOUR', 'CUISINE'] } },
+            { reason: 'not-stated', detail: {} }
+          ]
+        )
+      )
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.blockers).toHaveLength(2);
+    expect(outcome.reading.blockers[0]).toMatchObject({
+      reason: 'low-confidence',
+      detail: { between: ['SEJOUR', 'CUISINE'] }
+    });
+  });
+
+  it('refuses a blocker reason outside the one vocabulary', async () => {
+    // A second set of meanings is what Rule 8 forbids; a free-text reason here
+    // would become one the first time somebody switched on it.
+    const outcome = await readPlan(
+      request,
+      porting(replyFull([wall()], [{ reason: 'because-it-is-blurry', detail: {} }]))
+    );
+
+    expect(outcome.ok && outcome.reading.blockers).toHaveLength(0);
+  });
+
+  it('gives every reading a blockers array, even an empty one', async () => {
+    const outcome = await readPlan(request, porting(replyWith(wall())));
+
+    expect(outcome.ok && outcome.reading.blockers).toEqual([]);
+  });
+});
+
 describe('confidence is a blocker, not a filter (Rule 5)', () => {
-  it('refuses the whole reading when any observation is uncertain', async () => {
-    // Filtering the doubtful ones out leaves a plan with holes in it, and the
-    // holes are exactly where a user would have looked twice.
+  it('names a doubtful observation instead of emitting it', async () => {
+    // It is not acted on and it is not silently dropped. Until Sprint 1.10 the
+    // whole reading was refused, on the ground that a plan silently missing
+    // what the model was unsure of has holes exactly where a user would have
+    // looked twice — that objection was about silence, and the contract now has
+    // a field for saying so.
     const outcome = await readPlan(request, porting(replyWith(wall(0.94), wall(0.6))));
 
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.blocker.reason).toBe(PLAN_BLOCKER_REASONS.MissingInformation);
-    expect(outcome.blocker.message).toMatch(/1 of 2/);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.reading.observations).toHaveLength(1);
+    expect(outcome.reading.blockers).toHaveLength(1);
+    expect(outcome.reading.blockers[0]).toMatchObject({
+      reason: 'low-confidence',
+      detail: { kind: 'wall', confidence: 0.6, threshold: READING_CONFIDENCE_THRESHOLD }
+    });
   });
 
   it('accepts a reading exactly at the threshold', async () => {
     const outcome = await readPlan(request, porting(replyWith(wall(READING_CONFIDENCE_THRESHOLD))));
 
-    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.reading.observations).toHaveLength(1);
   });
 
-  it('rejects a confidence that is not one', async () => {
-    const outcome = await readPlan(
-      request,
-      porting(replyWith({ ...wall(), confidence: 5 }, { ...wall(), confidence: 'high' }))
-    );
+  it('blocks the whole reading when nothing clears the threshold', async () => {
+    const outcome = await readPlan(request, porting(replyWith(wall(0.6), wall(0.5))));
 
     expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.blocker.reason).toBe(PLAN_BLOCKER_REASONS.NothingToDo);
+  });
+
+  it('rejects a confidence that is not one, rather than clamping it', async () => {
+    // A model that answered `NaN` has told us nothing, and clamping would
+    // manufacture the certainty the threshold exists to withhold.
+    for (const confidence of [5, -1, Number.NaN, 'high', null, undefined]) {
+      const outcome = await readPlan(
+        request,
+        porting(replyWith(wall(0.9, { confidence }), wall()))
+      );
+      expect(outcome.ok && outcome.reading.observations).toHaveLength(1);
+    }
   });
 });
 
 describe('every refusal is a PlanBlocker (ADR-0027.1 Rule 8)', () => {
   it('says so when no vision port was supplied, and stays usable', async () => {
-    // The ordinary case. A host with no vision-capable provider still imports,
-    // places and traces plans — symmetrical with the host's own absent
-    // `requestExtraction`.
+    // The ordinary case, and the feature detection the host relies on: a host
+    // with no vision-capable provider still imports, places and traces plans.
     const outcome = await readPlan(request, undefined);
 
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.blocker.reason).toBe(PLAN_BLOCKER_REASONS.Unsupported);
     expect(outcome.blocker.suggestions.join(' ')).toMatch(/by hand/i);
+  });
+
+  it('asks the supplied port exactly once, and asks about this page', async () => {
+    // The other half of the absent-port case: when there IS a port it is used,
+    // once, with the image it was given. Catches a reader that reads twice, or
+    // one that answers from something other than the page it was handed.
+    const port = porting(replyWith(wall()));
+    await readPlan(request, port);
+
+    const read = port.read as ReturnType<typeof vi.fn>;
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.calls[0]?.[0]).toMatchObject({ image: IMAGE });
   });
 
   it('refuses prose rather than mining it (ADR-0027.1 Rule 6)', async () => {
@@ -196,6 +485,14 @@ describe('every refusal is a PlanBlocker (ADR-0027.1 Rule 8)', () => {
       request,
       porting('I can see a floor plan with several walls. The kitchen is to the north.')
     );
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.blocker.reason).toBe(PLAN_BLOCKER_REASONS.Unsupported);
+  });
+
+  it('refuses a reply with no observations array at all', async () => {
+    const outcome = await readPlan(request, porting(JSON.stringify({ walls: [] })));
 
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
@@ -229,20 +526,60 @@ describe('every refusal is a PlanBlocker (ADR-0027.1 Rule 8)', () => {
   });
 });
 
-describe('the instruction forbids what the Skills already do', () => {
-  it('asks the model for none of the arithmetic', async () => {
-    const port = porting(replyWith(wall()));
-    await readPlan(request, port);
+describe('the instruction asks for meaning and forbids geometry', () => {
+  it('forbids every kind of arithmetic and every kind of coordinate', async () => {
+    const instruction = await instructionOf(porting(replyWith(wall())));
+    const lower = instruction.toLowerCase();
 
-    const call = (port.read as ReturnType<typeof vi.fn>).mock.calls[0];
-    const instruction = String((call?.[0] as { instruction?: unknown })?.instruction ?? '');
     // Named in the prompt rather than merely absent from it: a model told what
     // not to compute volunteers it far less often than one left to infer.
-    for (const forbidden of ['length', 'thickness', 'area', 'scale', 'metres', 'swing']) {
-      expect(instruction.toLowerCase()).toContain(forbidden);
+    for (const forbidden of [
+      'length',
+      'thickness',
+      'area',
+      'scale',
+      'metres',
+      'swing',
+      'endpoints',
+      'coordinates',
+      'centrelines'
+    ]) {
+      expect(lower).toContain(forbidden);
     }
-    expect(instruction).toMatch(/Do NOT report, calculate or infer/);
-    // The frame the coordinates are in, so a model does not invent a normalised one.
+    expect(instruction).toContain('NEVER create geometry');
+    expect(instruction).toMatch(/already known from the document itself/i);
+    // The frame a region is stated in, so a model does not invent a normalised one.
     expect(instruction).toContain('1240 by 1754');
+  });
+
+  it('asks for each of the six kinds and each of the four wall kinds', async () => {
+    const instruction = await instructionOf(porting(replyWith(wall())));
+
+    for (const kind of Object.values(PLAN_OBSERVATION_KINDS)) {
+      expect(instruction).toContain(`"${kind}"`);
+    }
+    for (const kind of Object.values(OBSERVED_WALL_KINDS)) {
+      expect(instruction).toContain(kind);
+    }
+    for (const kind of Object.values(ANNOTATION_KINDS)) {
+      expect(instruction).toContain(kind);
+    }
+  });
+
+  it('asks for what a wall divides, and for a room footprint not a label box', async () => {
+    const instruction = await instructionOf(porting(replyWith(wall())));
+
+    expect(instruction).toMatch(/WHAT IT DIVIDES/);
+    expect(instruction).toMatch(/separates/);
+    // The distinction 046.7u's trap rejection depends on entirely.
+    expect(instruction).toMatch(/never the box\s*\n?\s*around its printed name/i);
+  });
+
+  it('tells the model to say it cannot tell rather than answer precisely', async () => {
+    const instruction = await instructionOf(porting(replyWith(wall())));
+
+    expect(instruction).toMatch(/blockers/);
+    expect(instruction).toMatch(/Do not replace uncertainty with a precise-looking answer/i);
+    expect(instruction).toMatch(/Use "unknown" rather than choosing/i);
   });
 });

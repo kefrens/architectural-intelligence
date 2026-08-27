@@ -6,12 +6,28 @@ on:
   pull_request:
     branches: [main]
 
-# This repository stands alone (Sprint 30.3, ADR-0030 Rule 4). It consumes the
-# ArchiSimple platform by **version, from npm** — never a workspace link, never a
-# sibling checkout. A clean clone here builds with nothing else present, and this
-# workflow is what proves that on every push.
+# Two jobs, because there are two questions and they have different answers.
+#
+#   `standalone`  — can a fresh consumer install this from the registry and build
+#                   it, with nothing else present? That is ADR-0030 Rule 4's
+#                   actual promise, and the platform it resolves is whatever was
+#                   last **published**.
+#
+#   `against-platform-source` — does this still work against the platform being
+#                   **developed**? Nobody asked that until Sprint 051.4, and the
+#                   cost was concrete: `WallDto` gained two required fields in the
+#                   platform's source, `standalone` stayed green because npm still
+#                   had the old ten-field version under the same `0.2.0` and the
+#                   same `AUTOMATION_CONTRACT_VERSION`, and the mismatch surfaced
+#                   days later as a Docker build failure in this repository's test
+#                   harness.
+#
+# The second job does **not** weaken Rule 4. This repository's manifest stays
+# registry-only — the "No local dependencies" step below still asserts it — and
+# the platform's source is spliced in at install time by a generated pnpm
+# workspace, never by a dependency declaration.
 jobs:
-  build-and-test:
+  standalone:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,3 +65,63 @@ jobs:
             }
             console.log('All ' + Object.keys(all).length + ' dependencies resolve from a registry.');
           "
+
+  # ------------------------------------------------------------------
+  # Sprint 051.4. The same splice `Dockerfile.web` and `Dockerfile.ai-service`
+  # perform, from the same script, so there is one definition of the combined
+  # workspace's shape rather than a third copy here.
+  #
+  # `continue-on-error` deliberately: this job reports drift, it does not gate
+  # merges. The platform is unpublished and moving, so red here means "the two
+  # contracts have diverged" — real information, and not always something this
+  # repository can fix. It becomes a gate when the platform is released and
+  # the peer ranges here move with it (ADR-0030 Rule 8).
+  # ------------------------------------------------------------------
+  against-platform-source:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout Architectural Intelligence
+        uses: actions/checkout@v4
+        with:
+          path: architectural-intelligence
+
+      # PLATFORM_REPO_TOKEN must be able to read the archisimple repository if
+      # it is private. It is the mirror of the AI_REPO_TOKEN that archisimple's
+      # own docker workflow uses to read this one.
+      - name: Checkout ArchiSimple
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/archisimple
+          path: archisimple
+          token: ${{ secrets.PLATFORM_REPO_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Splice the two repositories into one workspace
+        run: node archisimple/tools/dev-workspace/write-workspace.mjs .
+
+      # No --frozen-lockfile: the workspace is assembled fresh here, so there is
+      # no separately-trusted lockfile to freeze against.
+      - name: Install
+        run: pnpm install
+
+      # Build, and deliberately not test.
+      #
+      # A contract mismatch between the two repositories is a **compile-time**
+      # failure — that is exactly how this one surfaced, as `tsc` refusing a
+      # `WallDto` in a test harness. Build is therefore the whole signal.
+      #
+      # Running the suite here would add a step that is red for an unrelated
+      # reason: `bug-011-constraint-evaluation.test.ts` Test D is red on purpose
+      # and blocked pending an ADR, so `vitest run` exits non-zero regardless of
+      # the platform. A job that is always red reports nothing, which is the
+      # failure mode this job exists to avoid rather than reproduce.
+      - name: Build against the platform's source
+        run: pnpm build

@@ -47,6 +47,51 @@ import { BuildingKnowledge } from '../understanding/building-knowledge.js';
 
 export const LEVEL_ID = 'level-1';
 
+/**
+ * Fields `WallDto` requires in the platform **on disk** but not in the platform
+ * **on npm**.
+ *
+ * This repository builds against two different versions of the same contract,
+ * by design. Its own CI runs `npm ci` and resolves the platform from the
+ * registry at `^0.2.0` — ADR-0030 Rule 4, and the thing that keeps "standalone"
+ * a property of the repository rather than a description of someone's laptop.
+ * The `~/Dev/IA` development workspace and both Docker images splice in the
+ * platform's **source**, which is ahead of what has been published.
+ *
+ * `locationLine` and `shapeType` became required on `WallDto` when the platform
+ * added `ResizeWallOperation` (archisimple `b8ba616`), after `0.2.0` went out.
+ * So the two contracts genuinely disagree, and this fixture has to satisfy both
+ * until the platform is released and the peer ranges here move with it
+ * (ADR-0030 Rule 8's order).
+ *
+ * ## Why a spread of a named constant, and not a cast
+ *
+ * Writing these inline is an **excess property** error against the published
+ * `WallDto`, which has neither field. Leaving them to `overrides` is a
+ * **missing required property** error against the local one, because
+ * `Partial<WallDto>` makes them optional. Both were checked, against both
+ * contracts, with this repository's own `tsc`.
+ *
+ * A spread satisfies both: TypeScript does not excess-property-check properties
+ * that arrive by spread, and the spread still supplies what the newer contract
+ * requires.
+ *
+ * `as WallDto` would also compile against both — and would suppress the check
+ * for **every** field, so the next required field added upstream would land here
+ * silently and be discovered by a consumer instead. This tolerates exactly the
+ * two fields it names, and stays strict about everything else. That is the
+ * whole reason it is a constant with a name rather than an assertion.
+ *
+ * **Delete this the moment the platform is published and the ranges here move.**
+ * It is a bridge across a version gap, not a fixture default.
+ */
+const NEWER_CONTRACT_FIELDS = {
+  // ADR-0051's default, and what every wall drawn before Sprint 048.1 was.
+  locationLine: 'centre',
+  // A wall with no arc.
+  shapeType: 'linear'
+} as const;
+
 /** One wall, with the fields `WallDto` requires and sensible defaults for the rest. */
 export function wall(
   id: string,
@@ -66,6 +111,7 @@ export function wall(
     length,
     wallType: 'partition',
     loadBearing: false,
+    ...NEWER_CONTRACT_FIELDS,
     ...overrides
   };
 }

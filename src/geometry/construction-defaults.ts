@@ -45,10 +45,37 @@ export const OPENING_KINDS = {
 export type OpeningKind = (typeof OPENING_KINDS)[keyof typeof OPENING_KINDS];
 
 export interface OpeningDefaults {
+  /** The **structural opening** (baie), in metres — the hole in the wall. */
   readonly width: number;
   readonly height: number;
   /** Height of the opening's underside above the finished floor. */
   readonly sill: number;
+  /**
+   * The Library entry this specifies, where a standard product exists
+   * (Sprint 1.11, ArchiSimple ADR-0038 Rule 6, ADR-0057 Rule 11).
+   *
+   * **A constant, not a catalogue read.** This stage already owns opening size
+   * as an architectural decision — see this file's own header — and *which
+   * standard door* is the same kind of decision. A *porte 83* is nameable from
+   * architectural knowledge; it does not require knowing what any particular
+   * machine has installed.
+   *
+   * A read port was considered and rejected: it would make the same Brief
+   * produce different Specifications on two machines depending on which
+   * libraries each user had imported, and an approved artefact is immutable
+   * (ADR-0027.1 Rule 4). It would also be an eighth dependency.
+   *
+   * A hard-coded identifier is safe precisely because ADR-0038 Rule 2
+   * guarantees an asset id is **stable across releases of its provider**. That
+   * guarantee is what a reference like this is entitled to rely on.
+   *
+   * Absent for a passage: ArchiSimple ships no canonical cased opening, and
+   * naming one that does not exist would be worse than naming none. An identity
+   * the host cannot resolve costs the opening its drawing and nothing else
+   * (ADR-0038 Rule 16), so an absent one is simply the state every opening was
+   * in before this existed.
+   */
+  readonly assetDefinitionId?: string;
 }
 
 export interface ConstructionDefaults {
@@ -76,7 +103,22 @@ export const DEFAULT_CONSTRUCTION: ConstructionDefaults = Object.freeze({
   storeyHeight: 3,
   floorAssembly: 0.25,
   opening: Object.freeze({
-    door: Object.freeze({ width: 0.9, height: 2.1, sill: 0 }),
+    // A *porte 83*: an 83 cm leaf in a 93 cm structural opening, which is the
+    // standard for a main room in the NF P20-101 series.
+    //
+    // The width moved from 0.90 in Sprint 1.11, and the reason is not
+    // cosmetic: **0.90 m corresponds to no leaf anybody can order.** The series
+    // is 63/73/83/93 at the leaf, which with a standard bloc-porte huisserie
+    // needs openings of 0.73/0.83/0.93/1.03. Specifying 0.90 specified a door
+    // that does not exist.
+    door: Object.freeze({
+      width: 0.93,
+      height: 2.1,
+      sill: 0,
+      assetDefinitionId: 'archisimple:door-single-leaf-83'
+    }),
+    // No identity: a cased opening has no leaf, and ArchiSimple's canonical
+    // library ships no passage to name.
     passage: Object.freeze({ width: 1.2, height: 2.1, sill: 0 })
   })
 });
@@ -105,7 +147,9 @@ export function describeDefaults(defaults: ConstructionDefaults): readonly strin
   return [
     `External walls are ${mm(defaults.externalWallThickness)} thick and internal walls ${mm(defaults.internalWallThickness)}; nothing in the brief states a construction type.`,
     `Walls are ${defaults.storeyHeight - defaults.floorAssembly} m clear, from a ${defaults.storeyHeight} m floor-to-floor height less a ${mm(defaults.floorAssembly)} floor.`,
-    `Doors are ${mm(door.width)} × ${door.height} m and cased openings ${mm(passage.width)} × ${passage.height} m, centred on the wall they cross.`,
+    // Names the product, not only the numbers (Sprint 1.11): a reviewer is
+    // approving a *porte 83*, and "930 × 2.1" alone does not say so.
+    `Doors are a standard 83 leaf in a ${mm(door.width)} × ${door.height} m opening, and cased openings ${mm(passage.width)} × ${passage.height} m, centred on the wall they cross.`,
     'No wall is marked load-bearing: that needs a structural model this stage does not have.',
     'There are no windows: the approved geometry records no opening in an external wall for one to be placed in.'
   ];

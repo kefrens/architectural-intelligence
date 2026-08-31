@@ -159,6 +159,19 @@ export function violationsOf(
     if (opening.width <= 0) {
       violations.push({ id: 'S5', detail: 'an opening has no width' });
     }
+    // Shape, and nothing else (Sprint 1.11). Not checked against the identifier
+    // grammar and **not resolved**: this layer holds no catalogue, and an
+    // identity naming a library some machine lacks is valid — the host builds
+    // the opening anyway and it draws with the built-in mark.
+    if (
+      opening.assetDefinitionId !== undefined &&
+      (typeof opening.assetDefinitionId !== 'string' || opening.assetDefinitionId.length === 0)
+    ) {
+      violations.push({
+        id: 'S3',
+        detail: `an opening names an unusable asset definition ("${String(opening.assetDefinitionId)}")`
+      });
+    }
     if (opening.width >= length) {
       violations.push({
         id: 'S5',

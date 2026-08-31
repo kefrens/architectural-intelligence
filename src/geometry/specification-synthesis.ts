@@ -285,15 +285,29 @@ function openingsFor(
       );
     }
 
+    const opening = defaults.opening[kind];
     openings.push({
       id: createUuid(),
       wallId: run.runId,
       kind,
       distanceAlongWall: round(distanceAlong(run, midpoint(centreline.start, centreline.end))),
       width,
-      height: defaults.opening[kind].height,
-      sill: defaults.opening[kind].sill,
-      connects: candidate.betweenSpaceIds
+      height: opening.height,
+      sill: opening.sill,
+      connects: candidate.betweenSpaceIds,
+      // The product this specifies, where a standard one exists (Sprint 1.11).
+      //
+      // Written **even when the door was narrowed** to fit a short shared wall:
+      // the host scales the symbol to the width actually built, and the record
+      // of what was intended is worth more than a silence. The warning raised
+      // above already tells a reviewer the door was narrowed.
+      //
+      // Omitted rather than written as `undefined`, so a passage — and any
+      // future kind with no canonical product — produces exactly the opening it
+      // produced before this field existed.
+      ...(opening.assetDefinitionId === undefined
+        ? {}
+        : { assetDefinitionId: opening.assetDefinitionId })
     });
   }
 

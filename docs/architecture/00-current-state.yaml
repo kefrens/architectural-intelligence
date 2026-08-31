@@ -716,6 +716,19 @@ docs:
       - ADR-0030 — Repository Separation
       - ADR-0031 — Geometry Execution Pipeline
 
+# Sprint 1.11. A Specification names the Library entry its doors were designed
+# as, so a building this layer designed is built with the door it specified.
+specifiedDoorIdentity:
+  sprint: 1.11
+  field: SpecifiedOpening.assetDefinitionId # optional; absent on a passage
+  source: a constant in construction-defaults.ts # not a catalogue read — see the sprint's section 4
+  door: archisimple:door-single-leaf-83
+  doorOpeningWidth: 0.93 # the baie an 83 leaf needs; was 0.90, which is in no NF P20-101 series
+  validatedAsShapeOnly: true # this layer holds no catalogue and resolves nothing
+  hostHalf: archisimple Sprint 053.1 # reader, translator, contract 1.19.0
+  capturedFixture: archisimple/fixtures/geometry-specification/e-named-doors.json
+  windowsStillUnreachable: true # a Geometry Graph gap, not a naming one
+
 notImplemented:
   # Sprint 1.6 gave this layer a realisation *lane*; it did not give it
   # realisation *state*. The two remaining BUG-008 Phase 3 items are one

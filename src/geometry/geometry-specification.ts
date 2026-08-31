@@ -152,6 +152,25 @@ export interface SpecifiedOpening {
   readonly sill: number;
   /** The two spaces this connects. */
   readonly connects: readonly [string, string];
+  /**
+   * The Library entry this opening was designed as (Sprint 1.11, ArchiSimple
+   * ADR-0038 Rule 6, ADR-0057).
+   *
+   * **Identity, never a dimension source.** `width`, `height` and `sill` above
+   * stay authoritative and are what the host builds; this says *which door was
+   * specified*, which a kind and three numbers cannot. A double door has to
+   * draw as a double door.
+   *
+   * The host validates it as a **shape** and resolves nothing (ArchiSimple
+   * Sprint 053.1): an identity naming a library a machine never installed is
+   * valid, and never blocks a build. A design must be buildable without a
+   * catalogue, or an approved artefact would be machine-dependent — which
+   * ADR-0027.1 Rule 4 forbids.
+   *
+   * Absent for a cased opening, and for every Specification produced before
+   * this existed.
+   */
+  readonly assetDefinitionId?: string;
 }
 
 /**

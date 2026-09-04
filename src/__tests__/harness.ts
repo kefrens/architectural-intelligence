@@ -60,9 +60,12 @@ export const LEVEL_ID = 'level-1';
  *
  * `locationLine` and `shapeType` became required on `WallDto` when the platform
  * added `ResizeWallOperation` (archisimple `b8ba616`), after `0.2.0` went out.
- * So the two contracts genuinely disagree, and this fixture has to satisfy both
- * until the platform is released and the peer ranges here move with it
- * (ADR-0030 Rule 8's order).
+ * `buildingMaterial` joined them in archisimple's Sprint 060.4 (ADR-0062 Rule 5,
+ * contract `1.22.0`) — always present on a wall, unlike `RoomDto`'s optional one,
+ * because a wall's material was never an assign-later concept. So the two
+ * contracts genuinely disagree, and this fixture has to satisfy both until the
+ * platform is released and the peer ranges here move with it (ADR-0030 Rule 8's
+ * order).
  *
  * ## Why a spread of a named constant, and not a cast
  *
@@ -79,7 +82,7 @@ export const LEVEL_ID = 'level-1';
  * `as WallDto` would also compile against both — and would suppress the check
  * for **every** field, so the next required field added upstream would land here
  * silently and be discovered by a consumer instead. This tolerates exactly the
- * two fields it names, and stays strict about everything else. That is the
+ * three fields it names, and stays strict about everything else. That is the
  * whole reason it is a constant with a name rather than an assertion.
  *
  * **Delete this the moment the platform is published and the ranges here move.**
@@ -89,7 +92,29 @@ const NEWER_CONTRACT_FIELDS = {
   // ADR-0051's default, and what every wall drawn before Sprint 048.1 was.
   locationLine: 'centre',
   // A wall with no arc.
-  shapeType: 'linear'
+  shapeType: 'linear',
+  // What every wall resolves to with nothing assigned — the platform's
+  // `DEFAULT_BUILDING_MATERIAL_ID`, spelled out rather than imported because
+  // `@archisimple/materials` is not a peer of this repository and does not
+  // exist in the published `0.2.0` at all.
+  buildingMaterial: {
+    left: { buildingMaterialId: 'default' },
+    right: { buildingMaterialId: 'default' }
+  }
+} as const;
+
+/**
+ * The same bridge, for `ProjectStructureDto`.
+ *
+ * `roofs` became required in archisimple's Sprint 060.5 (ADR-0062 Rule 2,
+ * contract `1.23.0`), which introduced the `Roof` entity. Nothing in this layer
+ * reads a roof yet, so an empty list is the whole fixture; it exists only so the
+ * structure literal satisfies the newer contract. Same spread-not-cast reasoning
+ * as {@link NEWER_CONTRACT_FIELDS}, and the same instruction: delete it when the
+ * ranges here move.
+ */
+const NEWER_STRUCTURE_FIELDS = {
+  roofs: []
 } as const;
 
 /** One wall, with the fields `WallDto` requires and sensible defaults for the rest. */
@@ -208,7 +233,8 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     ],
     walls,
     rooms,
-    openings
+    openings,
+    ...NEWER_STRUCTURE_FIELDS
   };
 
   const selection: SelectionDto =

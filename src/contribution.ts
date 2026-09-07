@@ -54,6 +54,7 @@ import {
   createGeometryToolDefinition,
   createLayoutToolDefinition,
   createProgrammeToolDefinition,
+  createMaterialToolDefinitions,
   createSpecificationToolDefinition
 } from './tools/index.js';
 
@@ -206,7 +207,11 @@ function contributionFor(
       // Sprint 1.1, appended last. `listFunctionSchemas` hands this order to a
       // model, so a reordering is a behaviour change wearing a refactor's
       // clothes — new tools go on the end, never in the middle.
-      createSpecificationToolDefinition(intelligence)
+      createSpecificationToolDefinition(intelligence),
+      // Sprint 061.4, on the end for the reason stated directly above. These
+      // are the first tools here that carry a Request rather than a plan, and
+      // the first whose arguments are an **asset** rather than geometry.
+      ...createMaterialToolDefinitions(intelligence)
     ],
     contextProvider: createArchitecturalContextProvider(
       intelligence,

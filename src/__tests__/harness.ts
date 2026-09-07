@@ -24,6 +24,8 @@ import {
   EMPTY_SELECTION_DTO,
   GET_PROJECT_STRUCTURE_QUERY_TYPE,
   GET_SELECTION_QUERY_TYPE,
+  GET_BUILDING_MATERIAL_CATALOGUE_QUERY_TYPE,
+  GET_WALL_FACE_ENCLOSURE_QUERY_TYPE,
   GET_WALL_TOPOLOGY_QUERY_TYPE,
   type CommandDispatcher,
   type CommandRequest,
@@ -33,7 +35,9 @@ import {
   type QueryDispatcher,
   type RoomDto,
   type SelectionDto,
-  type WallDto
+  type BuildingMaterialDefinitionDto,
+  type WallDto,
+  type WallFaceEnclosuresDto
 } from '@archisimple/automation-api';
 import { BuildingService, createCoreBuildingProvider } from '@archisimple/building-model';
 import { createBuildingInspectorProvider, InspectorService } from '@archisimple/inspector';
@@ -196,6 +200,10 @@ export interface HarnessOptions {
   readonly openings?: readonly OpeningDto[];
   /** Entity ids to report as selected. */
   readonly selectedIds?: readonly string[];
+  /** The material catalogue a model names an id from (Sprint 061.4). */
+  readonly materials?: readonly BuildingMaterialDefinitionDto[];
+  /** Each wall's two faces, for the façade tool (Sprint 061.4, ADR-0063). */
+  readonly wallFaceEnclosure?: readonly WallFaceEnclosuresDto[];
 }
 
 export interface Harness {
@@ -215,6 +223,9 @@ export function createHarness(options: HarnessOptions = {}): Harness {
   const rooms = options.rooms ?? ROOMS;
   const openings = options.openings ?? OPENINGS;
   const selectedIds = options.selectedIds ?? [];
+
+  const materials = options.materials ?? [];
+  const wallFaceEnclosure = options.wallFaceEnclosure ?? [];
 
   const structure: ProjectStructureDto = {
     project: { id: 'project-1', type: 'Project', name: 'Test House' },
@@ -263,6 +274,14 @@ export function createHarness(options: HarnessOptions = {}): Harness {
           return selection as unknown as TResult;
         case GET_WALL_TOPOLOGY_QUERY_TYPE:
           return [] as unknown as TResult;
+        // Sprint 061.4. The catalogue a model names a material from, and the
+        // faces a façade assignment paints. Both default to empty, which is
+        // the same answer a headless host gives, so a test that cares supplies
+        // its own.
+        case GET_BUILDING_MATERIAL_CATALOGUE_QUERY_TYPE:
+          return materials as unknown as TResult;
+        case GET_WALL_FACE_ENCLOSURE_QUERY_TYPE:
+          return wallFaceEnclosure as unknown as TResult;
         default:
           throw new Error(`The harness does not answer "${query.type}".`);
       }
@@ -273,7 +292,9 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     registeredTypes: () => [
       GET_PROJECT_STRUCTURE_QUERY_TYPE,
       GET_SELECTION_QUERY_TYPE,
-      GET_WALL_TOPOLOGY_QUERY_TYPE
+      GET_WALL_TOPOLOGY_QUERY_TYPE,
+      GET_BUILDING_MATERIAL_CATALOGUE_QUERY_TYPE,
+      GET_WALL_FACE_ENCLOSURE_QUERY_TYPE
     ]
   };
 

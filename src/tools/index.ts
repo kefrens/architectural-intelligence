@@ -16,5 +16,11 @@ export { createArchitecturalToolDefinitions } from './architectural-tools.js';
 export { createCaptureBriefToolDefinition } from './brief-tools.js';
 export { createGeometryToolDefinition } from './geometry-tools.js';
 export { createLayoutToolDefinition } from './layout-tools.js';
+export {
+  MATERIAL_TOOL_NAMES,
+  createAssignFacadeToolDefinition,
+  createAssignMaterialToolDefinition,
+  createMaterialToolDefinitions
+} from './material-tools.js';
 export { createProgrammeToolDefinition } from './programme-tools.js';
 export { createSpecificationToolDefinition } from './specification-tools.js';

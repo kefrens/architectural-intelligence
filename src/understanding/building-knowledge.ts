@@ -33,13 +33,18 @@
  */
 
 import {
+  getBuildingMaterialCatalogueQuery,
   getProjectStructureQuery,
   getSelectionQuery,
+  getWallFaceEnclosureQuery,
+  type BuildingMaterialDefinitionDto,
+  type BuildingMaterialTargetDto,
   type OpeningDto,
   type ProjectStructureDto,
   type QueryDispatcher,
   type SelectionDto,
-  type WallDto
+  type WallDto,
+  type WallFaceEnclosuresDto
 } from '@archisimple/automation-api';
 import {
   BUILDING_OBJECT_KINDS,
@@ -48,6 +53,7 @@ import {
 } from '@archisimple/building-model';
 import { isEditable, type InspectorService, type PropertyDescriptor } from '@archisimple/inspector';
 import { roomBuildingObjectId, type SpatialRoom, type SpatialService } from '@archisimple/spatial';
+import { outwardFacingSides } from '@archisimple/skills';
 import type { IntentTarget } from '../intent/architectural-intent.js';
 import { INTENT_TARGET_KINDS } from '../intent/architectural-intent.js';
 
@@ -138,6 +144,55 @@ export class BuildingKnowledge {
    */
   defaultLevelId(): string | undefined {
     return this.building.getObjectsByKind(BUILDING_OBJECT_KINDS.Floor)[0]?.sourceEntityId;
+  }
+
+  // --- Materials (Sprint 061.4, ADR-0063 Rule 8) -------------------------------
+
+  /**
+   * What the project can be made of.
+   *
+   * Read here, through the dispatcher this class already holds, rather than
+   * handed in by the host. Reading the document **is** this class's job — what
+   * this layer may not hold is a `CommandDispatcher`, which is what ADR-0023
+   * Rule 1 means by proposing rather than acting.
+   *
+   * It exists so a model can name a material that is real. A tool taking a
+   * `buildingMaterialId` from a model that has never seen one is a
+   * hallucination generator: `brick-red-01` is not guessable.
+   */
+  materials(): readonly BuildingMaterialDefinitionDto[] {
+    return this.queries.execute(getBuildingMaterialCatalogueQuery());
+  }
+
+  /**
+   * Every wall face on the default level that looks at open air.
+   *
+   * **The model never computes this and never names a face.** Which side of a
+   * wall faces outdoors is derived from the rooms the application detects
+   * (ADR-0063), and a model asked to work it out would be confidently wrong on
+   * exactly the walls finding I-94 is about — the ones drawn end-to-start.
+   *
+   * Scoped to {@link defaultLevelId}, which is the storey the interface's own
+   * bulk action paints (Sprint 061.3) and the one `activeFloorId` already
+   * reports to a model. A project with no geometry has no level and no faces.
+   */
+  outwardFacingFaces(): readonly BuildingMaterialTargetDto[] {
+    const levelId = this.defaultLevelId();
+    if (levelId === undefined) return [];
+    const enclosures: readonly WallFaceEnclosuresDto[] = this.queries.execute(
+      getWallFaceEnclosureQuery(levelId)
+    );
+    // **Which faces are outward is not decided here** (Sprint 061.4a, ADR-0063
+    // Rule 8). It was, and `apps/web`'s bulk action decided it separately — two
+    // lines in two repositories that agreed and had no reason to keep agreeing.
+    // `outwardFacingSides` is the one place the rule lives, including that an
+    // `unresolved` face is skipped rather than guessed at; this shapes its
+    // answer into the Automation vocabulary a skill may not name.
+    return outwardFacingSides(enclosures).sides.map((face) => ({
+      id: face.wallId,
+      type: 'Wall' as const,
+      side: face.side
+    }));
   }
 
   // --- Semantic concepts ------------------------------------------------------

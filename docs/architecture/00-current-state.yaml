@@ -614,10 +614,10 @@ composition:
     - PlanningStageCapability
 
 tools:
-  implemented: 9
+  implemented: 11
   describeOnly: true
   executes: false
-  order: 'captureBrief, building operations, programme, layout, geometry, specification — handed to a model in this order; new tools append, never insert'
+  order: 'captureBrief, building operations, programme, layout, geometry, specification, materials — handed to a model in this order; new tools append, never insert'
   values:
     - planning_captureBrief
     - building_moveRoom
@@ -628,6 +628,23 @@ tools:
     - planning_generateLayout
     - planning_generateGeometry
     - planning_generateSpecification # Sprint 1.1, appended last on purpose
+    # Sprint 061.4. The FIRST tools here that carry a Request rather than a
+    # plan — one assignment has no alternatives to weigh — and the first whose
+    # argument is an asset rather than geometry.
+    - material_assignToSelection
+    - material_assignFacade
+  materialTools:
+    file: src/tools/material-tools.ts
+    returns: "{ kind: 'request' }" # not a proposal; no planner stage
+    requires: [automation.assignBuildingMaterial]
+    # The model names a MATERIAL and nothing else. Which faces look outdoors is
+    # derived (ADR-0063); a level it could not name if it wanted to, because the
+    # context fragment publishes activeFloorId and floorCount and no level names.
+    modelNames: [buildingMaterialId]
+    facadeScope: BuildingKnowledge.defaultLevelId # the storey the UI paints too
+    risk: destructive when more than one target # PROPOSAL_RISKS has no middle value
+    refusesUnknownMaterialByName: true # blocked, listing what exists — not undefined
+    highlightsAffectedWalls: true # ResolvedToolCall.highlightedEntityIds
 
 provider:
   adapter: { id: ARCHITECTURAL_PROVIDER_ID, file: src/provider/architectural-provider-adapter.ts }

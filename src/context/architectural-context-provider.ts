@@ -114,6 +114,15 @@ export interface ArchitecturalContextFragment extends ContextFragment {
   /** The level new geometry belongs on; `null` for a project with no geometry yet. */
   readonly activeFloorId: string | null;
   readonly floorCount: number;
+  /**
+   * What the project can be made of (Sprint 061.4, ADR-0063 Rule 8).
+   *
+   * Ids **and** names, because the tools take an id and a model reads a name:
+   * without this a `buildingMaterial` argument is a guess, and `brick-red-01`
+   * is not guessable. Derived per turn like everything else here; a host
+   * serving no catalogue reports an empty list, which is an answer.
+   */
+  readonly materials: readonly { readonly id: string; readonly name: string; readonly category: string }[];
   /** Where the design is (Sprint 1.4). Derived per turn; nothing is stored. */
   readonly design: ArchitecturalDesignState;
 }
@@ -129,6 +138,9 @@ export function createArchitecturalContextProvider(
       answerableQuestions: ANSWERABLE_QUESTIONS,
       activeFloorId: knowledge.defaultLevelId() ?? null,
       floorCount: knowledge.floors().length,
+      materials: knowledge
+        .materials()
+        .map((material) => ({ id: material.id, name: material.name, category: material.category })),
       design: describeDesign(intelligence.workflowState())
     })
   };

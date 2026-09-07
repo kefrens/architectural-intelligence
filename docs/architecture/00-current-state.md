@@ -889,6 +889,48 @@ which is what lets a host satisfy them without depending on this package.
 
 ---
 
+# Materials (Sprint 061.4)
+
+**A model can ask for a material**, which until this sprint it could not: nothing
+in this package mentioned one, so ADR-0062 Rule 1's claim that "a click, a
+sidebar edit, an MCP call and an approved AI proposal are the same edit" named a
+caller that could not call.
+
+`BuildingKnowledge` gained two readers — `materials()` and
+`outwardFacingFaces()` — through the `QueryDispatcher` it already holds.
+**No new port was needed**: reading the document *is* this layer's job, and what
+it may not hold is a `CommandDispatcher`, which is what ADR-0023 Rule 1 requires
+and what the compliance test matches on. The context fragment publishes the
+catalogue's ids, names and categories, because a tool taking a
+`buildingMaterialId` from a model that has never seen one is a hallucination
+generator — `brick-red-01` is not guessable.
+
+Two tools, appended **last** (`listFunctionSchemas` hands the order to a model,
+so inserting is a behaviour change):
+
+- `material_assignToSelection` — applies to whatever is selected, with no
+  `side`, because "paint this wall" means both faces as one undo entry and
+  choosing one is something a user does by clicking it.
+- `material_assignFacade` — applies to every outward-facing face on the storey
+  `defaultLevelId()` names, which is the one the interface's own bulk action
+  paints. It takes **only a material**: which faces look outdoors is derived
+  (ADR-0063), and a level is not nameable by a model — the fragment publishes
+  `activeFloorId` and `floorCount` and no level *names*.
+
+Both return `{ kind: 'request' }` rather than a plan: one Request, no
+alternatives to weigh, no geometry to re-solve, so a planner stage would decide
+nothing. A façade declares `risk: 'destructive'` — "changes many elements at
+once", by that value's own definition — so approval asks twice. An unknown
+material id is `blocked` with the ids that exist, rather than a Request the
+boundary would refuse.
+
+**These tools do not reach the host yet.** `apps/web` resolves this package from
+the registry at a version whose range cannot select the current source
+(finding **I-97** in the platform repository). Until that is closed, the tools
+are complete and unreachable — the same shape the Material System's roof was.
+
+---
+
 # Tools and the provider
 
 **Nine tool definitions** describe, to a language model, how to reach the five

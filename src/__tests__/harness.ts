@@ -111,14 +111,22 @@ const NEWER_CONTRACT_FIELDS = {
  * The same bridge, for `ProjectStructureDto`.
  *
  * `roofs` became required in archisimple's Sprint 060.5 (ADR-0062 Rule 2,
- * contract `1.23.0`), which introduced the `Roof` entity. Nothing in this layer
- * reads a roof yet, so an empty list is the whole fixture; it exists only so the
- * structure literal satisfies the newer contract. Same spread-not-cast reasoning
- * as {@link NEWER_CONTRACT_FIELDS}, and the same instruction: delete it when the
- * ranges here move.
+ * contract `1.23.0`), which introduced the `Roof` entity, and `slabs` in Sprint
+ * 068.0 (ADR-0066 Rules 1-2, contract `1.29.0`), which introduced the `Slab`.
+ * Nothing in this layer reads either yet, so empty lists are the whole fixture;
+ * they exist only so the structure literal satisfies the newer contract. Same
+ * spread-not-cast reasoning as {@link NEWER_CONTRACT_FIELDS}, and the same
+ * instruction: delete it when the ranges here move.
+ *
+ * Both are the same lesson about the split (ADR-0030): a field the platform adds
+ * to a **published** DTO is additive for whoever *reads* one and breaking for
+ * whoever *constructs* one — and this layer's fixtures construct. The platform's
+ * own contract note for 1.29.0 says "all additive", which was true of every
+ * consumer it could see.
  */
 const NEWER_STRUCTURE_FIELDS = {
-  roofs: []
+  roofs: [],
+  slabs: []
 } as const;
 
 /** One wall, with the fields `WallDto` requires and sensible defaults for the rest. */

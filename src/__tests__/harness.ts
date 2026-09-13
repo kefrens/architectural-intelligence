@@ -66,7 +66,9 @@ export const LEVEL_ID = 'level-1';
  * added `ResizeWallOperation` (archisimple `b8ba616`), after `0.2.0` went out.
  * `buildingMaterial` joined them in archisimple's Sprint 060.4 (ADR-0062 Rule 5,
  * contract `1.22.0`) — always present on a wall, unlike `RoomDto`'s optional one,
- * because a wall's material was never an assign-later concept. So the two
+ * because a wall's material was never an assign-later concept. `roofJoin`
+ * followed in Sprint 069.7 (contract `2.7.0`), required for the same reason:
+ * every wall resolves to one, `'clip'` for a wall that never said. So the two
  * contracts genuinely disagree, and this fixture has to satisfy both until the
  * platform is released and the peer ranges here move with it (ADR-0030 Rule 8's
  * order).
@@ -86,8 +88,9 @@ export const LEVEL_ID = 'level-1';
  * `as WallDto` would also compile against both — and would suppress the check
  * for **every** field, so the next required field added upstream would land here
  * silently and be discovered by a consumer instead. This tolerates exactly the
- * three fields it names, and stays strict about everything else. That is the
- * whole reason it is a constant with a name rather than an assertion.
+ * fields it names, and stays strict about everything else. That is the whole
+ * reason it is a constant with a name rather than an assertion — `roofJoin`
+ * arrived that way, as a cold `tsc -b` failure naming one field.
  *
  * **Delete this the moment the platform is published and the ranges here move.**
  * It is a bridge across a version gap, not a fixture default.
@@ -104,7 +107,11 @@ const NEWER_CONTRACT_FIELDS = {
   buildingMaterial: {
     left: { buildingMaterialId: 'default' },
     right: { buildingMaterialId: 'default' }
-  }
+  },
+  // What a wall that never said resolves to (Sprint 069.7). `gableEnd` stays
+  // absent on purpose: it is optional upstream, and saying nothing is not the
+  // same as saying `'eave'` — the roof's kind derives one.
+  roofJoin: 'clip'
 } as const;
 
 /**

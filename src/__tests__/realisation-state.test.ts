@@ -28,7 +28,10 @@ import {
   synthesizeGeometry,
   synthesizeSpecification,
   type GeometryGraph,
-  type GeometrySpecification
+  type GeometrySpecification,
+  isExtracted,
+  type GraphProvenance,
+  type LayoutProvenance
 } from '../geometry/index.js';
 import { LAYOUT_PLAN_KIND, synthesizeLayout, type LayoutPlan } from '../layout/index.js';
 import {
@@ -42,6 +45,14 @@ import {
   type RealisationStateReader
 } from '../realisation/index.js';
 import { createHarness } from './harness.js';
+
+/** A generated graph's provenance, narrowed. Fails loudly if it is extracted. */
+function layoutProvenanceOf(graph: { sourceLayout: GraphProvenance }): LayoutProvenance {
+  if (isExtracted(graph.sourceLayout)) {
+    throw new Error("expected a generated graph, got an extracted one");
+  }
+  return graph.sourceLayout;
+}
 
 const UTTERANCE = 'Design a single storey family home with 3 bedrooms and 2 bathrooms';
 
@@ -129,8 +140,10 @@ function projectWith(state?: Partial<RealisationState> | 'no-reader') {
       },
       {
         kind: LAYOUT_PLAN_KIND,
-        id: graph.sourceLayout.layoutId,
-        revision: graph.sourceLayout.layoutRevision,
+        // A generated graph, so its provenance is a Layout. Narrowed rather
+        // than cast: `sourceLayout` is a union since 075.0.
+        id: layoutProvenanceOf(graph).layoutId,
+        revision: layoutProvenanceOf(graph).layoutRevision,
         value: layout
       },
       { kind: GEOMETRY_GRAPH_KIND, id: graph.id, revision: graph.revision, value: graph },

@@ -9,6 +9,9 @@ export {
   type GeometryAdjacency,
   type GeometryGraph,
   type LayoutProvenance,
+  isExtracted,
+  type ExtractionProvenance,
+  type GraphProvenance,
   type OpeningCandidate,
   type RoomPolygon,
   type WallCandidate

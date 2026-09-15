@@ -51,7 +51,10 @@ export function evaluateGeometryGraph(
         name: polygon.name,
         storey: polygon.storey,
         corners: polygon.corners,
-        requestedArea: polygon.requestedArea,
+        // Spread rather than passed: under `exactOptionalPropertyTypes` an
+        // explicit `undefined` is not the same as an absent field, and absence
+        // is what "no Programme asked" means.
+        ...(polygon.requestedArea === undefined ? {} : { requestedArea: polygon.requestedArea }),
         achievedArea: polygon.achievedArea
       })),
       adjacencies: graph.adjacencies.map((adjacency) => ({

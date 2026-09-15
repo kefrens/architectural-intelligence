@@ -29,6 +29,7 @@
 import { ARCHITECTURAL_BRIEF_KIND } from '../brief/architectural-brief.js';
 import {
   GEOMETRY_GRAPH_KIND,
+  isExtracted,
   matchesLayout,
   type GeometryGraph
 } from '../geometry/geometry-graph.js';
@@ -119,7 +120,12 @@ export const WORKFLOW_PIPELINE: readonly WorkflowStageDescriptor[] = [
     matches: (value, upstream) => matchesLayout(value as GeometryGraph, upstream),
     derivedFrom: (value) => {
       const source = (value as Partial<GeometryGraph>).sourceLayout;
-      return identity(source?.layoutId, source?.layoutRevision);
+      // An extracted Graph derives from no Layout, so it has no upstream
+      // identity to report — absent, not fabricated (ArchiSimple Sprint 075.0).
+      if (source === undefined || isExtracted(source)) {
+        return identity(undefined, undefined);
+      }
+      return identity(source.layoutId, source.layoutRevision);
     }
   },
   {

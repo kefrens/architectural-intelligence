@@ -189,7 +189,7 @@ export {
   wallHeight,
   type ConstructionDefaults,
   type GeometryConstraintRecord,
-  type GeometryProvenance,
+  type GraphProvenance,
   type GeometrySpecification,
   type MetricConventions,
   type OpeningDefaults,

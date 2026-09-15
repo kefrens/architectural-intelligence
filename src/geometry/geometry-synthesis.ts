@@ -204,7 +204,9 @@ export function synthesizeGeometry(options: SynthesizeGeometryOptions): Geometry
     name: polygon.name,
     storey: polygon.storey,
     corners: polygon.corners,
-    requestedArea: polygon.requestedArea,
+    // Absent stays absent: the packer always sets it, but spreading rather than
+    // passing keeps `exactOptionalPropertyTypes` honest about the difference.
+    ...(polygon.requestedArea === undefined ? {} : { requestedArea: polygon.requestedArea }),
     achievedArea: polygon.achievedArea
   }));
 

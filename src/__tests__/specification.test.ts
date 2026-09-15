@@ -41,7 +41,8 @@ import {
   wallHeight,
   type GeometryGraph,
   type GeometrySpecification,
-  type SpecificationCompliance
+  type SpecificationCompliance,
+  isExtracted
 } from '../geometry/index.js';
 import { LAYOUT_PLAN_KIND, synthesizeLayout, type LayoutPlan } from '../layout/index.js';
 import {
@@ -111,7 +112,9 @@ function serviceWith(
   const layoutIdentity =
     graph === undefined
       ? { id: layout.id, revision: layout.revision }
-      : { id: graph.sourceLayout.layoutId, revision: graph.sourceLayout.layoutRevision };
+      : isExtracted(graph.sourceLayout)
+        ? { id: layout.id, revision: layout.revision }
+        : { id: graph.sourceLayout.layoutId, revision: graph.sourceLayout.layoutRevision };
 
   return new ArchitecturalIntelligenceService({
     knowledge: createHarness().knowledge,

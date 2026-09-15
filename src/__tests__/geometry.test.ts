@@ -151,7 +151,9 @@ describe('the geometry graph', () => {
     const graph = geometryFrom(layoutFor(TWO_STOREY));
 
     for (const polygon of graph.polygons) {
-      const drift = Math.abs(polygon.achievedArea - polygon.requestedArea) / polygon.requestedArea;
+      expect(polygon.requestedArea).toBeDefined();
+      const requested = polygon.requestedArea!;
+      const drift = Math.abs(polygon.achievedArea - requested) / requested;
       expect(drift).toBeLessThan(0.02);
     }
   });

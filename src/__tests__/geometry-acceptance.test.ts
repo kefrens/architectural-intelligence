@@ -164,7 +164,10 @@ describe('the design pipeline produces a coherent plan (Bug 006 §11)', () => {
 
   it('gives every space the area the programme asked it for', () => {
     for (const polygon of pipeline.geometry.polygons) {
-      expect(polygon.achievedArea).toBeCloseTo(polygon.requestedArea, 2);
+      // Optional since 075.0 only so an extracted room can say nobody asked.
+      // A generated one always has a target, and this pins that.
+      expect(polygon.requestedArea).toBeDefined();
+      expect(polygon.achievedArea).toBeCloseTo(polygon.requestedArea!, 2);
     }
   });
 

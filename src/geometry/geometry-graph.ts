@@ -43,6 +43,7 @@ export const GEOMETRY_GRAPH_KIND = 'geometry-graph';
 
 /** The Layout Plan this geometry was realised from (Rules 4 and 12). */
 export interface LayoutProvenance {
+  readonly kind?: 'layout';
   readonly layoutId: string;
   /**
    * The revision that was read. A Layout revised afterwards leaves this geometry
@@ -51,18 +52,70 @@ export interface LayoutProvenance {
   readonly layoutRevision: number;
 }
 
+/**
+ * Where a Graph came from when it came from a drawing (ArchiSimple Sprint 075.0).
+ *
+ * A design read out of a floor plan has **no Layout Plan, no Programme and no
+ * Brief** — ADR-0044 Rule 2 says those are *absent, not fabricated*, and a
+ * synthesised `layoutId` would be the most durable kind of lie, because
+ * everything downstream trusts it.
+ *
+ * So provenance widens rather than being invented. It names the reading and the
+ * page, which is what a reviewer needs in order to go back and look.
+ */
+export interface ExtractionProvenance {
+  readonly kind: 'extraction';
+  /** The reading this geometry was selected from. */
+  readonly readingId: string;
+  /** Which page of the source document. */
+  readonly pageIndex: number;
+}
+
+/**
+ * What a Geometry Graph derives from.
+ *
+ * A consumer that must tell them apart reads `kind` — absent or `'layout'` for
+ * the generative pipeline, which keeps every Graph written before Sprint 075.0
+ * valid without migration.
+ */
+export type GraphProvenance = LayoutProvenance | ExtractionProvenance;
+
+/** Whether this Graph was read out of a drawing rather than generated. */
+export function isExtracted(provenance: GraphProvenance): provenance is ExtractionProvenance {
+  return provenance.kind === 'extraction';
+}
+
 /** One room, placed. */
 export interface RoomPolygon {
   /** Unique per instance: a three-bedroom space produces three of these. */
   readonly id: string;
-  /** The Layout Plan's — and therefore the Programme's — space id. */
+  /**
+   * The identity of the space this polygon realises.
+   *
+   * The Layout Plan's — and therefore the Programme's — space id for a
+   * generated design. For an **extracted** one it is the space observation's
+   * canonical key: a real identity the reading produced, not a fabricated one.
+   * Required either way, because compliance keys on it and adjacency pairs on it.
+   */
   readonly spaceId: string;
   readonly name: string;
   readonly storey: number;
   /** Counter-clockwise, closed by convention rather than by a repeated last point. */
   readonly corners: readonly Point2D[];
-  /** What the Space Programme asked for, in square metres. */
-  readonly requestedArea: number;
+  /**
+   * What the Space Programme asked for, in square metres.
+   *
+   * **Optional since ArchiSimple Sprint 075.0, and the absence carries meaning.**
+   * A generated room has a target because a Programme asked for it. An
+   * **extracted** room was measured off a drawing no Programme preceded, so there
+   * is no target — and the honest representation of "nobody asked" is absence.
+   *
+   * Zero and `= achievedArea` were both weighed and are worse: zero reads as a
+   * defect to `areasRecorded`, and copying the achieved area fabricates a perfect
+   * area-fidelity score while asserting that a Programme requested exactly what
+   * was measured.
+   */
+  readonly requestedArea?: number;
   /** What this polygon actually encloses. Both are recorded; see `I7`. */
   readonly achievedArea: number;
 }
@@ -143,7 +196,7 @@ export interface GeometryGraph extends EnrichedArtefact {
   readonly id: string;
   readonly revision: number;
   readonly createdAt: number;
-  readonly sourceLayout: LayoutProvenance;
+  readonly sourceLayout: GraphProvenance;
   readonly storeys: number;
   /** Floor level of each storey, in metres. Derived — see `assumptions`. */
   readonly storeyElevations: readonly number[];
@@ -158,7 +211,7 @@ export interface GeometryGraph extends EnrichedArtefact {
 }
 
 export function createGeometryGraph(input: {
-  readonly sourceLayout: LayoutProvenance;
+  readonly sourceLayout: GraphProvenance;
   readonly storeys: number;
   readonly storeyElevations: readonly number[];
   readonly polygons: readonly RoomPolygon[];
@@ -225,6 +278,11 @@ export function matchesLayout(
   graph: GeometryGraph,
   layout: { readonly id: string; readonly revision: number }
 ): boolean {
+  // An extracted design has no Layout to match, and saying "stale" about one
+  // would be answering a question nobody asked (Sprint 075.0).
+  if (isExtracted(graph.sourceLayout)) {
+    return false;
+  }
   return (
     graph.sourceLayout.layoutId === layout.id &&
     graph.sourceLayout.layoutRevision === layout.revision
@@ -256,11 +314,15 @@ export function summarizeGeometryGraph(graph: GeometryGraph): string {
 
     lines.push(`**${storeyLabel(storey)}** — ${round(storeyArea(graph, storey))} m²`);
     for (const polygon of here) {
-      const drift = Math.abs(polygon.achievedArea - polygon.requestedArea);
+      // No Programme asked for this room — an extracted one. Saying "asked
+      // for" of a room nobody requested would be the fabrication Rule 2 forbids,
+      // so the line simply states what is there (ArchiSimple Sprint 075.0).
+      const requested = polygon.requestedArea;
+      const drift = requested === undefined ? 0 : Math.abs(polygon.achievedArea - requested);
       const area =
-        drift < 0.05
+        requested === undefined || drift < 0.05
           ? `${round(polygon.achievedArea)} m²`
-          : `${round(polygon.achievedArea)} m² _(asked for ${round(polygon.requestedArea)})_`;
+          : `${round(polygon.achievedArea)} m² _(asked for ${round(requested)})_`;
       lines.push(`- ${polygon.name} — ${area}`);
     }
     lines.push('');

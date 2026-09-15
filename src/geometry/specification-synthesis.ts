@@ -28,12 +28,11 @@
  */
 
 import {
-  boundsArea,
-  boundsOf,
   createSkillContext,
   findJunctions,
   insertWallThickness,
   mergeColinearRuns,
+  polygonArea,
   type RealisationPolygon,
   type RealisationWall,
   type WallCentreline,
@@ -141,7 +140,10 @@ export function synthesizeSpecification(
         name: source.name,
         storey,
         boundary: polygon.corners,
-        area: round(boundsArea(boundsOf(polygon.corners)))
+        // ArchiSimple Sprint 074.0. A room may now have a concave corner,
+        // and the box around an L is larger than the L. Reporting the box
+        // would overstate every such room to whoever approved the areas.
+        area: round(polygonArea(polygon.corners))
       });
     }
 

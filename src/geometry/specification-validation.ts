@@ -24,7 +24,12 @@
  * that breaks a clause is caught by the same check as broken synthesis.
  */
 
-import { GEOMETRY_EPSILON, boundsOf, isRectilinear } from '@archisimple/skills';
+import {
+  GEOMETRY_EPSILON,
+  isSimpleRectilinear,
+  polygonsOverlap,
+  sharedPolygonEdges
+} from '@archisimple/skills';
 import { PLAN_BLOCKER_REASONS, type PlanBlocker } from '../planning/index.js';
 import type { GeometryGraph } from './geometry-graph.js';
 import {
@@ -93,10 +98,10 @@ export function violationsOf(
   // S6 first: the later clauses measure shapes, and measuring one this cannot
   // judge would report a wrong number rather than an unanswerable question.
   for (const space of specification.spaces) {
-    if (!isRectilinear(space.boundary)) {
+    if (!isSimpleRectilinear(space.boundary)) {
       violations.push({
         id: 'S6',
-        detail: `${space.name} is not an axis-aligned rectangle`
+        detail: `${space.name} is not a simple axis-aligned polygon`
       });
     }
   }
@@ -210,14 +215,19 @@ function overlaps(spaces: readonly SpecifiedSpace[]): readonly SpecificationViol
       if (a.storey !== b.storey) {
         continue;
       }
-      const boxA = boundsOf(a.boundary);
-      const boxB = boundsOf(b.boundary);
-      const apart =
-        boxA.maxX < boxB.minX - GEOMETRY_EPSILON ||
-        boxB.maxX < boxA.minX - GEOMETRY_EPSILON ||
-        boxA.maxY < boxB.minY - GEOMETRY_EPSILON ||
-        boxB.maxY < boxA.minY - GEOMETRY_EPSILON;
-      if (!apart) {
+      // ArchiSimple Sprint 074.0. This compared bounding boxes, which is
+      // exact for rectangles and wrong for anything else: two L-shaped
+      // rooms nested into one another’s concave corners have overlapping
+      // boxes while sharing no area at all, so every realistic L-shaped
+      // plan was refused here after synthesis had succeeded.
+      //
+      // `polygonsOverlap` answers the area question; `sharedPolygonEdges`
+      // answers the touching one, and returns nothing when they overlap, so
+      // the two together are exactly this clause: touch **or** overlap.
+      const touchingOrOverlapping =
+        polygonsOverlap(a.boundary, b.boundary) ||
+        sharedPolygonEdges(a.boundary, b.boundary).length > 0;
+      if (touchingOrOverlapping) {
         violations.push({
           id: 'S2',
           detail: `${a.name} and ${b.name} touch or overlap; the wall between them left no gap`

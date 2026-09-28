@@ -12,6 +12,7 @@ import { createAlignWallsOperationProvider } from './align-walls-operation.js';
 import { createDeleteOperationProvider } from './delete-operation.js';
 import { createMoveRoomOperationProvider } from './move-room-operation.js';
 import { createRenameRoomOperationProvider } from './rename-room-operation.js';
+import { createSetSunOperationProvider } from './set-sun-operation.js';
 import { createUnsupportedOperationProvider } from './unsupported-operations.js';
 import { createWallPropertyOperationProvider } from './wall-property-operation.js';
 
@@ -22,6 +23,8 @@ export function createBuiltInOperationProviders(): readonly ArchitecturalOperati
     createWallPropertyOperationProvider(),
     createAlignWallsOperationProvider(),
     createDeleteOperationProvider(),
+    // Sprint 1.14: the project's sun.
+    createSetSunOperationProvider(),
     createUnsupportedOperationProvider()
   ];
 }

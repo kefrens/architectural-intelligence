@@ -27,6 +27,14 @@ import {
   GET_BUILDING_MATERIAL_CATALOGUE_QUERY_TYPE,
   GET_WALL_FACE_ENCLOSURE_QUERY_TYPE,
   GET_WALL_TOPOLOGY_QUERY_TYPE,
+  GET_SITE_QUERY_TYPE,
+  GET_SOLAR_DAY_QUERY_TYPE,
+  GET_SUN_POSITION_QUERY_TYPE,
+  type GetSolarDayQuery,
+  type GetSunPositionQuery,
+  type SiteDto,
+  type SolarDayDto,
+  type SunPositionDto,
   type CommandDispatcher,
   type CommandRequest,
   type OpeningDto,
@@ -219,6 +227,16 @@ export interface HarnessOptions {
   readonly materials?: readonly BuildingMaterialDefinitionDto[];
   /** Each wall's two faces, for the façade tool (Sprint 061.4, ADR-0063). */
   readonly wallFaceEnclosure?: readonly WallFaceEnclosuresDto[];
+  /**
+   * The Site and its sun (Sprint 1.13). Default: no place, so no sun — the
+   * answer a headless host gives. A test that asks about the sun supplies the
+   * platform's answers (recorded DTOs).
+   */
+  readonly site?: SiteDto;
+  readonly sunPosition?: (query: GetSunPositionQuery) => SunPositionDto;
+  readonly solarDay?: (query: GetSolarDayQuery) => SolarDayDto;
+  /** The present, for a sun question with no moment (Sprint 1.13, DEC-5). */
+  readonly now?: () => number;
 }
 
 export interface Harness {
@@ -241,6 +259,10 @@ export function createHarness(options: HarnessOptions = {}): Harness {
 
   const materials = options.materials ?? [];
   const wallFaceEnclosure = options.wallFaceEnclosure ?? [];
+  const site: SiteDto = options.site ?? {};
+  const notLocated = { available: false, reason: 'not-located' } as const;
+  const sunPosition = options.sunPosition ?? ((): SunPositionDto => notLocated);
+  const solarDay = options.solarDay ?? ((): SolarDayDto => notLocated);
 
   const structure: ProjectStructureDto = {
     project: { id: 'project-1', type: 'Project', name: 'Test House' },
@@ -297,6 +319,13 @@ export function createHarness(options: HarnessOptions = {}): Harness {
           return materials as unknown as TResult;
         case GET_WALL_FACE_ENCLOSURE_QUERY_TYPE:
           return wallFaceEnclosure as unknown as TResult;
+        // Sprint 1.13: the sun, and the Site it needs.
+        case GET_SITE_QUERY_TYPE:
+          return site as unknown as TResult;
+        case GET_SUN_POSITION_QUERY_TYPE:
+          return sunPosition(query as unknown as GetSunPositionQuery) as unknown as TResult;
+        case GET_SOLAR_DAY_QUERY_TYPE:
+          return solarDay(query as unknown as GetSolarDayQuery) as unknown as TResult;
         default:
           throw new Error(`The harness does not answer "${query.type}".`);
       }
@@ -309,7 +338,10 @@ export function createHarness(options: HarnessOptions = {}): Harness {
       GET_SELECTION_QUERY_TYPE,
       GET_WALL_TOPOLOGY_QUERY_TYPE,
       GET_BUILDING_MATERIAL_CATALOGUE_QUERY_TYPE,
-      GET_WALL_FACE_ENCLOSURE_QUERY_TYPE
+      GET_WALL_FACE_ENCLOSURE_QUERY_TYPE,
+      GET_SITE_QUERY_TYPE,
+      GET_SUN_POSITION_QUERY_TYPE,
+      GET_SOLAR_DAY_QUERY_TYPE
     ]
   };
 
@@ -348,7 +380,13 @@ export function createHarness(options: HarnessOptions = {}): Harness {
   refresh();
 
   return {
-    knowledge: new BuildingKnowledge({ queries, building, spatial, inspector }),
+    knowledge: new BuildingKnowledge({
+      queries,
+      building,
+      spatial,
+      inspector,
+      ...(options.now === undefined ? {} : { now: options.now })
+    }),
     building,
     spatial,
     inspector,

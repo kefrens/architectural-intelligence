@@ -37,6 +37,7 @@ import {
   type ArchitecturalIntentKind,
   type IntentTarget
 } from './architectural-intent.js';
+import { parseSunPhrase } from './sun-phrases.js';
 
 /** The document's internal unit. Every distance parameter is normalised to it. */
 const MILLIMETRES_PER_METRE = 1000;
@@ -149,6 +150,16 @@ function compassOf(utterance: string): string | undefined {
   return match === null ? undefined : match[1]!.toLowerCase();
 }
 
+/** A sun question about how much sun something gets: exposure (Sprint 1.13). */
+const EXPOSURE =
+  /\b(?:gets?|receives?|has|have)\s+(?:any\s+|much\s+|enough\s+|the\s+)?sun(?:light|shine)?\b|\bhow\s+(?:much|many\s+hours\s+of)\s+sun(?:light|shine)?\b/i;
+
+/** Setting the sun (Sprint 1.14): a setting verb with the sun, or on/off. */
+const SET_SUN =
+  /\b(?:show|set|put|move|change|hide)\b.*\b(?:sun(?:light|shine)?|shadows?)\b|\bturn\s+(?:the\s+)?sun\s+(?:on|off)\b|\bturn\s+(?:on|off)\s+the\s+sun\b|\bsun\s+(?:on|off)\b/i;
+const SUN_OFF =
+  /\bturn\s+(?:the\s+)?sun\s+off\b|\bturn\s+off\s+the\s+sun\b|\bsun\s+off\b|\bhide\s+the\s+sun\b/i;
+
 interface RecognitionRule {
   readonly action: string;
   readonly kind: ArchitecturalIntentKind;
@@ -207,6 +218,24 @@ const RULES: readonly RecognitionRule[] = [
     pattern: /\bload[\s-]?bearing\b/i,
     unless: /\b(?:set|make|change|turn|mark)\b/i
   },
+  // Sprint 1.13: the project's sun. Before `naturalLight`, whose "daylight"
+  // stays its own: "is there enough daylight in the kitchen" is about windows.
+  // The veto is not a bare "set" — "when does the sun set?" is a question —
+  // but setting the sun, which is Sprint 1.14's.
+  {
+    action: ARCHITECTURAL_ACTIONS.sun,
+    kind: ARCHITECTURAL_INTENT_KINDS.Question,
+    pattern:
+      /\b(?:sun(?:rise|set|light|shine)?s?|solar\s+noon|solstices?|equinox(?:es)?|shadows?|day\s+length)\b|\bhow\s+long\s+is\s+the\s+day\b/i,
+    unless:
+      /\b(?:show|turn|put|move|change|make|hide)\b|\bset\s+(?:the\s+)?sun\b|^\s*(?:the\s+)?sun\s+(?:on|off)\b/i,
+    parameters: (utterance) => ({
+      sun: parseSunPhrase(utterance),
+      // "Does the kitchen get sunlight?" is exposure, which nothing computes
+      // yet (ArchiSimple V2 phase D); the answer says so rather than guess.
+      exposure: EXPOSURE.test(utterance)
+    })
+  },
   {
     action: ARCHITECTURAL_ACTIONS.naturalLight,
     kind: ARCHITECTURAL_INTENT_KINDS.Question,
@@ -253,6 +282,18 @@ const RULES: readonly RecognitionRule[] = [
   },
 
   // --- Epic 3: modifications ------------------------------------------------
+  // Sprint 1.14: setting the sun. First among modifications, so "move the sun
+  // to 10" is not a room move. 1.13's question rule vetoes these verbs, which is
+  // what hands them here.
+  {
+    action: ARCHITECTURAL_ACTIONS.setSun,
+    kind: ARCHITECTURAL_INTENT_KINDS.Modification,
+    pattern: SET_SUN,
+    parameters: (utterance) => ({
+      sun: parseSunPhrase(utterance),
+      enabled: !SUN_OFF.test(utterance)
+    })
+  },
   {
     action: ARCHITECTURAL_ACTIONS.renameRoom,
     kind: ARCHITECTURAL_INTENT_KINDS.Modification,

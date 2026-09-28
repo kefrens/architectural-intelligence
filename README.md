@@ -44,8 +44,11 @@ It proposes. Something else approves. Something else acts.
 The rest of the platform — the application, the packages, the ADRs — lives at
 **[kefrens/archisimple](https://github.com/kefrens/archisimple)**. This
 repository was extracted from it in Sprint 30.3 (ADR-0030) and carries that
-history. It arrives here from npm by version, never as a workspace link or a
-sibling path: a clean clone builds with nothing else present.
+history. The manifest names it by registry version, never as a workspace link
+or a sibling path. **Nothing is published any more** (ArchiSimple Sprint 085.0:
+the platform is proprietary), so development, CI and the ArchiSimple images
+build this package against the platform's **source**, through ArchiSimple's
+splice (`tools/dev-workspace/write-workspace.mjs`).
 
 ---
 
@@ -191,6 +194,9 @@ it offers.
 npm install @archisimple/architectural-intelligence
 ```
 
+> What npm serves is frozen: this package at `0.1.1` and the platform at `0.2.0`
+> of Sprint 31.0. Current versions are not published (ArchiSimple Sprint 085.0).
+
 The seven platform packages it needs are **`peerDependencies`**, deliberately:
 
 ```
@@ -290,32 +296,34 @@ must return a new object rather than mutate, and stays within a 50 ms budget.
 
 ## Development
 
+Beside an `archisimple` checkout, through its splice (this is how CI's gate and
+the ArchiSimple images build it):
+
 ```bash
-npm install
-npm run build      # tsc -b
-npm test           # vitest
-npm run lint
+node ../archisimple/tools/dev-workspace/write-workspace.mjs ..   # once, in the parent
+cd .. && pnpm install && pnpm build
+pnpm --filter @archisimple/architectural-intelligence test
 ```
+
+On its own, `npm install && npm run build` resolves npm's frozen platform of
+Sprint 31.0, which this package has outgrown (ArchiSimple Sprint 085.0): a
+result there says nothing about the current platform.
 
 `src/__tests__/architecture-compliance.test.ts` statically scans every
 production source and fails CI on a `@archisimple/core` import, a
 `CommandDispatcher`, or an eighth dependency outside the allow-list. If you need
 something that isn't on that list, that is a design signal.
 
-### Release order is not optional
+### Changes spanning both repositories
 
-**The platform releases first; this repository consumes a released version**
-(ADR-0030 Rule 8). Publishing a version that peer-depends on a platform version
-nobody can install fails at a _consumer's_ `npm install`, not in this CI.
+Nothing is released (ADR-0030 revision 2.0). A change spanning both lands in
+`archisimple`, then here, and is built through the splice — the development
+root and the `against-platform-source` CI job, which is the gate. When the
+platform's version moves, this repository's seven ranges move with it in the
+same step.
 
-A change spanning both, in order:
-
-1. Land it in `archisimple`, bump, release.
-2. Here: raise the `peerDependencies` range to that version, land, release.
-3. There: point `apps/web`'s `optionalDependencies` at this new version.
-
-Each repository is internally lockstep; the two are **not** lockstep with each
-other.
+Each repository keeps its own version line; the two are **not** lockstep with
+each other.
 
 ---
 

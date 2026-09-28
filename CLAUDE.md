@@ -14,10 +14,15 @@ The application and the eleven platform packages live at
 repository. This one was extracted from it in Sprint 30.3 (ADR-0030) and carries
 that history.
 
-**The platform arrives from npm, by version. Never a workspace link, never a
-sibling checkout, never a relative path** (ADR-0030 Rule 4) — CI asserts it. A
-clean clone of this repository builds with nothing else present, and that is the
-property the extraction was for.
+**The manifest names the platform by registry version only — never a
+workspace link, a sibling checkout or a relative path** (ADR-0030 Rule 4); CI
+asserts it. **But nothing is published any more** (ArchiSimple Sprint 085.0,
+ADR-0029 revision 3.0: the platform is proprietary), so npm's platform is a
+frozen copy of Sprint 31.0 that this repository outgrew: what a lone clone
+builds against is not the current platform. This repository is built, tested and deployed through the
+**splice**: `archisimple/tools/dev-workspace/write-workspace.mjs`, used by the
+development root (`~/Dev/IA`), both ArchiSimple Dockerfiles, and CI's
+`against-platform-source` job — the gate. `standalone` only reports.
 
 Read `../archisimple/docs/adr/` only if you have that checkout; the rules those
 ADRs set are summarised where they bite, below.
@@ -34,21 +39,18 @@ ADRs set are summarised where they bite, below.
 Its `notImplemented` section exists so the document can stay honest — update
 both files when a sprint lands, and only with what actually shipped.
 
-## The release order, which is not optional
+## How a change spanning both repositories lands
 
-**The platform releases first; this repository consumes a released version**
-(ADR-0030 Rule 8). Publishing a version that peer-depends on a platform version
-nobody can install fails at a _consumer's_ `npm install`, not in this CI — which
-is the worst place to find out.
+**Nothing is released** (ADR-0030 revision 2.0: Rule 8's order is suspended
+with publication). A change spanning both lands in `archisimple`, then here, and
+is proved through the splice: `cd ~/Dev/IA && pnpm install && pnpm build`, and
+the `against-platform-source` job. When the platform's version moves, this
+repository's seven ranges (peer **and** dev) move with it **in the same step**,
+or the splice stops linking them and the build silently resolves npm's frozen
+copy.
 
-A change spanning both, in order:
-
-1. Land it in `archisimple`, bump, release.
-2. Here: raise the `peerDependencies` range to that version, land, release.
-3. There: point `apps/web`'s `optionalDependencies` at this new version.
-
-Each repository is internally lockstep; the two are **not** lockstep with each
-other (ADR-0029 Rule 5, amended per-repository in revision 2.1).
+Each repository keeps its own version line; the two are **not** lockstep with
+each other.
 
 ## Peer dependencies are load-bearing
 

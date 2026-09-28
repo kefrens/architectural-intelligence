@@ -26,6 +26,7 @@
 import type { ArchitecturalIntent } from '../intent/architectural-intent.js';
 import { ARCHITECTURAL_ACTIONS } from '../intent/architectural-intent.js';
 import type { BuildingKnowledge } from './building-knowledge.js';
+import { answerSunQuestion } from './sun-question.js';
 
 /** Decimal places measurements are reported to, matching the Spatial context provider. */
 const MEASUREMENT_PRECISION = 2;
@@ -84,6 +85,9 @@ export function answerArchitecturalQuestion(
       return openingOrientation(intent, knowledge);
     case ARCHITECTURAL_ACTIONS.naturalLight:
       return naturalLight(knowledge);
+    // Sprint 1.13: the project's sun, from the platform's Queries.
+    case ARCHITECTURAL_ACTIONS.sun:
+      return answerSunQuestion(intent, knowledge);
     default:
       return undefined;
   }

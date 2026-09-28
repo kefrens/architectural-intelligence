@@ -236,6 +236,55 @@ realisationState:
   # a Brief to change, not whether the stage below it can be built.
   hasBriefToRevise: 'the brief stage holds an approved artefact'
 
+# Sprint 1.14 (ArchiSimple 085.2). The project's sun, set without a model.
+sunLane:
+  sprint: 1.14
+  action: edit.setSun # first among modifications; 1.13's question rule vetoes these verbs
+  phrases: 'show/set/put/move/change/hide … sun|shadows; turn (the) sun on|off; sun on|off. "to 17:30" is a time, "to 21 December" is not'
+  provider: src/planning/operations/set-sun-operation.ts # set-sun, built in
+  request: setSunSettingsRequest # one step, risk safe, affects nothing
+  firstMoment: 'ArchiSimple ADR-0092 Rule 2: a named day → its solar noon; nothing named → getSolarDay({ now }).suggestedMoment'
+  blockers:
+    [
+      unsupported (no place),
+      missing-information (unreadable day or time),
+      nothing-to-do (already on and nothing named; already off)
+    ]
+  routing: direct-execution # show/set/turn are not design verbs, even naming the house
+  autoApply: 'eligible under ArchiSimple ADR-0093 unchanged (one allow-listed safe Request)'
+  shadowsSwitch: 'a view preference this layer cannot see or set; the expected outcome says so'
+  tests:
+    - src/__tests__/sun-lane.test.ts
+    - ArchiSimple apps/web/src/ai/__tests__/assistantSunLane.test.ts
+
+# Sprint 1.13 (ArchiSimple 085.1). The project's sun, answered without a model.
+sunQuestions:
+  sprint: 1.13
+  action: question.sun # one question action; routed like every question (direct-execution)
+  port: none # the sun has Queries; ADR-AI-0004's port is for state none answers
+  queries: [getSite, getSolarDay, getSunPosition] # through BuildingKnowledge's QueryDispatcher
+  knowledge: 'BuildingKnowledge.site() / sunAt(moment) / solarDay(localDate?) / presentInstant(); now?: () => number injectable'
+  recognition: 'rule before naturalLight; veto: show/turn/put/move/change/make, "set the sun" (Sprint 1.14). "daylight" stays naturalLight'
+  phrases: src/intent/sun-phrases.ts # 21 December, December 21st, 21 Dec 2028, 2027-12-21, 21/12; June/December solstice, summer/winter solstice by hemisphere; at 10, at 10:30, at 3 pm, at noon
+  neverGuesses: 'an impossible day or time is a limitation naming it; a time is read on a 24-hour clock and the answer names it'
+  answers:
+    [
+      the day (sunrise,
+      solar noon and height,
+      sunset,
+      length; polar day and night),
+      the position at a named or the project's moment,
+      whether the 3D view shows it
+    ]
+  limitations:
+    [no place, unreadable day or time, exposure (how much sun a room gets — ArchiSimple V2 phase D)]
+  clock: 'the present only when the project has no moment and none is named (DEC-5)'
+  language: English, like every answer here
+  solarImported: false # the allow-list stays seven
+  tests:
+    - src/__tests__/sun-questions.test.ts
+    - ArchiSimple apps/web/src/ai/__tests__/assistantSunQuestions.test.ts # the real composition, through the splice
+
 # The design pipeline, complete since Sprint 1.1: five artefacts, five approvals.
 # The port the host supplies, and the one place it widened.
 artefactPort:

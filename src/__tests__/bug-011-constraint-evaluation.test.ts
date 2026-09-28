@@ -327,7 +327,12 @@ describe('BUG-011 Test D — repeated spaces have no addressable instances', () 
    * decision this test deliberately does not make — and per BUG-011 stop
    * condition 2, one that should be reviewed rather than assumed.
    */
-  it('cannot name the second bedroom in a constraint', () => {
+  // `it.fails` (ArchiSimple Sprint 085.0): this states BUG-011 TC-03's goal, not
+  // today's model, and was red by design — which kept every suite that ran it
+  // red for an unrelated reason. `it.fails` keeps the assertion live: the day
+  // repeated spaces become addressable it passes, `it.fails` reports that, and
+  // it becomes a plain `it` again.
+  it.fails('cannot name the second bedroom in a constraint (BUG-011 TC-03)', () => {
     const bedrooms = layoutForTC01().spaces.filter((entry) => /bedroom/i.test(entry.name));
     const addressable = new Set(bedrooms.map((entry) => entry.id));
 

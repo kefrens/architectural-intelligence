@@ -36,13 +36,20 @@ import {
   getBuildingMaterialCatalogueQuery,
   getProjectStructureQuery,
   getSelectionQuery,
+  getSiteQuery,
+  getSolarDayQuery,
+  getSunPositionQuery,
   getWallFaceEnclosureQuery,
+  type GetSunPositionQuery,
   type BuildingMaterialDefinitionDto,
   type BuildingMaterialTargetDto,
   type OpeningDto,
   type ProjectStructureDto,
   type QueryDispatcher,
   type SelectionDto,
+  type SiteDto,
+  type SolarDayDto,
+  type SunPositionDto,
   type WallDto,
   type WallFaceEnclosuresDto
 } from '@archisimple/automation-api';
@@ -63,6 +70,13 @@ export interface BuildingKnowledgeOptions {
   readonly spatial: SpatialService;
   /** Optional: without it, `editableProperties` answers empty and property edits are unplannable. */
   readonly inspector?: InspectorService;
+  /**
+   * The present, in UTC milliseconds (Sprint 1.13, DEC-5). Read only when a sun
+   * question names no day and the project has no moment of its own; the
+   * platform's Queries read no clock, so the one caller that needs "now" passes
+   * it. Injectable so a test fixes it.
+   */
+  readonly now?: () => number;
 }
 
 /** One editable property, flattened with the section it belongs to. */
@@ -100,12 +114,14 @@ export class BuildingKnowledge {
   private readonly building: BuildingService;
   private readonly spatial: SpatialService;
   private readonly inspector: InspectorService | undefined;
+  private readonly now: () => number;
 
   constructor(options: BuildingKnowledgeOptions) {
     this.queries = options.queries;
     this.building = options.building;
     this.spatial = options.spatial;
     this.inspector = options.inspector;
+    this.now = options.now ?? Date.now;
   }
 
   // --- The document, through the Automation API -------------------------------
@@ -193,6 +209,45 @@ export class BuildingKnowledge {
       type: 'Wall' as const,
       side: face.side
     }));
+  }
+
+  // --- The sun (Sprint 1.13, DEC-1) --------------------------------------------
+
+  /**
+   * Where the project is, and its sun's settings. Read for the sun's questions:
+   * "no place" and "which hemisphere" are both the anchor's.
+   */
+  site(): SiteDto {
+    return this.queries.execute(getSiteQuery());
+  }
+
+  /**
+   * The sun at a moment — the project's own when none is given. **The same
+   * Query every surface reads** (ArchiSimple ADR-0091 Rule 9): no port, and no
+   * astronomy here.
+   */
+  sunAt(moment: Omit<GetSunPositionQuery, 'type'> = {}): SunPositionDto {
+    return this.queries.execute(getSunPositionQuery(moment));
+  }
+
+  /**
+   * A day's sun: a named local date, else the project's moment's day, else —
+   * with no moment — today, by the present this class was given (DEC-5).
+   */
+  solarDay(localDate?: string): SolarDayDto {
+    if (localDate !== undefined) {
+      return this.queries.execute(getSolarDayQuery({ localDate }));
+    }
+    const projects = this.queries.execute(getSolarDayQuery());
+    if (projects.available || projects.reason !== 'no-moment') {
+      return projects;
+    }
+    return this.queries.execute(getSolarDayQuery({ now: new Date(this.now()).toISOString() }));
+  }
+
+  /** The present, for a caller that must name one (DEC-5). */
+  presentInstant(): string {
+    return new Date(this.now()).toISOString();
   }
 
   // --- Semantic concepts ------------------------------------------------------

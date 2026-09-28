@@ -91,8 +91,12 @@ export const ARCHITECTURAL_ACTIONS = {
   describeSelection: 'question.describeSelection',
   openingOrientation: 'question.openingOrientation',
   naturalLight: 'question.naturalLight',
+  /** The project's sun: its day, its position, whether it is shown (Sprint 1.13). */
+  sun: 'question.sun',
 
   // --- Modifications (Epic 3) ---
+  /** The project's sun: on, off, or a moment (Sprint 1.14). */
+  setSun: 'edit.setSun',
   moveRoom: 'edit.moveRoom',
   renameRoom: 'edit.renameRoom',
   setWallProperty: 'edit.setWallProperty',

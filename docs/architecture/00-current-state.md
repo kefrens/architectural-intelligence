@@ -807,6 +807,40 @@ used to compute four shares of its own. `evaluateGeometryGraph` does almost
 nothing either, because the packing rules are exported as a conformance suite a
 plugin author can test against without depending on this package at all.
 
+## The project's sun (Sprint 1.13, ArchiSimple 085.1)
+
+The Architectural Assistant answers questions about the sun with no language
+model: when it rises and sets on a day, how high it climbs, where it is at the
+project's moment or a named time, and whether the 3D view is showing it. One
+question action, `question.sun`, recognised before `naturalLight` (whose
+"daylight" stays its own) and vetoed by the verbs that set the sun, which are
+Sprint 1.14's.
+
+**No port.** ADR-AI-0004 made the realisation state a port because nothing on
+the boundary answers it. The sun has Queries — `getSite`, `getSolarDay`,
+`getSunPosition` — with typed DTOs, and `BuildingKnowledge` asks them through the
+dispatcher it already holds. Every number is the platform's; this layer picks
+which to read and says it in English. `@archisimple/solar` is not imported, and
+the allow-list stays seven.
+
+Days are read in English (`21 December`, `2027-12-21`, `the winter solstice`,
+resolved by the Site's hemisphere); a day or time it cannot read is named in a
+limitation, never guessed. How much sun a room gets is exposure, which nothing
+computes yet, and the answer says so.
+
+## Setting the sun (Sprint 1.14, ArchiSimple 085.2)
+
+"Show me the shadows on 21 December at 10", "move the sun to 17:30", "turn the
+sun off": `edit.setSun`, first among the modifications, planned by the built-in
+`set-sun` provider into one `setSunSettings` — `safe`, affecting no element,
+routed as direct execution (show, set and turn are not design verbs). A sun that
+exists keeps what was not named; a first one follows ArchiSimple ADR-0092 Rule
+2's convention (a named day's solar noon, else the Query's suggested moment for
+the present). It refuses honestly — no place, an unreadable day, nothing to
+change — and says that shadows are a view switch it cannot see. The proposal is
+what ArchiSimple ADR-0093 applies without asking once the user allows it; nothing
+here knows that.
+
 ## Constraint evaluation (Sprint 1.8, ArchiSimple ADR-0034)
 
 **This layer proposes intent; ArchiSimple evaluates reality.** `src/constraints/`
@@ -898,7 +932,7 @@ caller that could not call.
 
 `BuildingKnowledge` gained two readers — `materials()` and
 `outwardFacingFaces()` — through the `QueryDispatcher` it already holds.
-**No new port was needed**: reading the document *is* this layer's job, and what
+**No new port was needed**: reading the document _is_ this layer's job, and what
 it may not hold is a `CommandDispatcher`, which is what ADR-0023 Rule 1 requires
 and what the compliance test matches on. The context fragment publishes the
 catalogue's ids, names and categories, because a tool taking a
@@ -915,7 +949,7 @@ so inserting is a behaviour change):
   `defaultLevelId()` names, which is the one the interface's own bulk action
   paints. It takes **only a material**: which faces look outdoors is derived
   (ADR-0063), and a level is not nameable by a model — the fragment publishes
-  `activeFloorId` and `floorCount` and no level *names*.
+  `activeFloorId` and `floorCount` and no level _names_.
 
 Both return `{ kind: 'request' }` rather than a plan: one Request, no
 alternatives to weigh, no geometry to re-solve, so a planner stage would decide

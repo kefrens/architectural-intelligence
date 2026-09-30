@@ -60,6 +60,12 @@ import { BuildingKnowledge } from '../understanding/building-knowledge.js';
 export const LEVEL_ID = 'level-1';
 
 /**
+ * `MAIN_BUILDING_ID` in `@archisimple/core` (Sprint 083.4a, ADR-0096 Rule 2),
+ * spelled out because this layer may not import core (ADR-0023 Rule 1).
+ */
+export const MAIN_BUILDING_ID = 'building-main';
+
+/**
  * Fields `WallDto` requires in the platform **on disk** but not in the platform
  * **on npm**.
  *
@@ -133,6 +139,16 @@ const NEWER_CONTRACT_FIELDS = {
  * spread-not-cast reasoning as {@link NEWER_CONTRACT_FIELDS}, and the same
  * instruction: delete it when the ranges here move.
  *
+ * `buildings` joined them in Sprint 083.4a (ADR-0096 Rules 1-2), and unlike the
+ * other two it cannot be an empty list: every `LevelDto` now names a resolved
+ * `buildingId`, and Rule 1 requires it be one of these ids. So the fixture
+ * carries the one main building the single storey belongs to. `'building-main'`
+ * is spelled out rather than imported for the same reason
+ * `DEFAULT_BUILDING_MATERIAL_ID` is: it is `MAIN_BUILDING_ID` in
+ * `@archisimple/core`, which this layer may not import (ADR-0023 Rule 1).
+ * `main` repeats `id === 'building-main'` because a consumer above the boundary
+ * cannot reach that constant to compare.
+ *
  * Both are the same lesson about the split (ADR-0030): a field the platform adds
  * to a **published** DTO is additive for whoever *reads* one and breaking for
  * whoever *constructs* one — and this layer's fixtures construct. The platform's
@@ -141,7 +157,8 @@ const NEWER_CONTRACT_FIELDS = {
  */
 const NEWER_STRUCTURE_FIELDS = {
   roofs: [],
-  slabs: []
+  slabs: [],
+  buildings: [{ id: MAIN_BUILDING_ID, main: true, groundLevelId: LEVEL_ID }]
 } as const;
 
 /** One wall, with the fields `WallDto` requires and sensible defaults for the rest. */
@@ -276,7 +293,12 @@ export function createHarness(options: HarnessOptions = {}): Harness {
         // `elevation` is the ordering, and `height` is floor-to-floor. The
         // ground floor sits on the datum, which is what makes it the ground floor.
         elevation: 0,
-        height: 2.7
+        height: 2.7,
+        // Required since the platform's Sprint 083.4a (ADR-0096 Rule 1), and
+        // always resolved: a storey that names no building belongs to the main
+        // one. The id must be one of `structure.buildings`', which is why
+        // NEWER_STRUCTURE_FIELDS carries that building rather than an empty list.
+        buildingId: MAIN_BUILDING_ID
       }
     ],
     walls,

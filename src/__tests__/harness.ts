@@ -161,6 +161,24 @@ const NEWER_STRUCTURE_FIELDS = {
   buildings: [{ id: MAIN_BUILDING_ID, main: true, groundLevelId: LEVEL_ID }]
 } as const;
 
+/**
+ * A wall's ends under **both** contracts: `start` / `end` as the published `0.2.0` has them, and
+ * the reference line and derived centreline that replaced them in contract 3.0.0 (archisimple
+ * Sprint 088.9). A `centre` wall's reference is its centreline, so one pair serves all of them.
+ * A spread, for the reason {@link NEWER_CONTRACT_FIELDS} gives: no excess-property error
+ * against the newer type, no missing-property error against it either. Delete the `start` /
+ * `end` half when the ranges here move.
+ */
+function wallEnds(start: { x: number; y: number }, end: { x: number; y: number }) {
+  return {
+    start,
+    end,
+    referenceStart: start,
+    referenceEnd: end,
+    centreline: { start, end }
+  };
+}
+
 /** One wall, with the fields `WallDto` requires and sensible defaults for the rest. */
 export function wall(
   id: string,
@@ -173,8 +191,7 @@ export function wall(
     id,
     type: 'Wall',
     levelId: LEVEL_ID,
-    start,
-    end,
+    ...wallEnds(start, end),
     thickness: 0.2,
     height: 2.5,
     length,

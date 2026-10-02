@@ -52,8 +52,31 @@ const ALIGNMENT_TOLERANCE = 0.1;
 
 type Axis = 'x' | 'y';
 
+interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * The middle line of a wall, whichever contract the platform speaks.
+ *
+ * Contract 3.0.0 (the wall reference line, archisimple Sprint 088.9) replaced `WallDto.start` /
+ * `end` with `referenceStart` / `referenceEnd` and a derived `centreline`; the published `0.2.0`
+ * this repository also builds against has only `start` / `end`, which then **are** the
+ * centreline. Aligning walls means aligning their bodies, so it reads the centreline from
+ * either. Delete the second branch the day the ranges here move past a platform with the new
+ * contract (ADR-0030 Rule 8).
+ */
+function centrelineOf(wall: WallDto): { readonly start: Point; readonly end: Point } {
+  const either = wall as unknown as
+    | { readonly centreline: { readonly start: Point; readonly end: Point } }
+    | { readonly start: Point; readonly end: Point };
+  return 'centreline' in either ? either.centreline : either;
+}
+
 function midpoint(wall: WallDto, axis: Axis): number {
-  return axis === 'x' ? (wall.start.x + wall.end.x) / 2 : (wall.start.y + wall.end.y) / 2;
+  const { start, end } = centrelineOf(wall);
+  return axis === 'x' ? (start.x + end.x) / 2 : (start.y + end.y) / 2;
 }
 
 /**
@@ -61,9 +84,10 @@ function midpoint(wall: WallDto, axis: Axis): number {
  * by moving it horizontally, and vice versa.
  */
 function dominantAxis(walls: readonly WallDto[]): Axis {
-  const vertical = walls.filter(
-    (wall) => Math.abs(wall.end.y - wall.start.y) >= Math.abs(wall.end.x - wall.start.x)
-  ).length;
+  const vertical = walls.filter((wall) => {
+    const { start, end } = centrelineOf(wall);
+    return Math.abs(end.y - start.y) >= Math.abs(end.x - start.x);
+  }).length;
   return vertical * 2 >= walls.length ? 'x' : 'y';
 }
 

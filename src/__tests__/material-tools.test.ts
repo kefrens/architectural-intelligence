@@ -25,8 +25,11 @@ import {
 import { createHarness, LEVEL_ID, WALLS } from './harness.js';
 
 /** The Request these tools carry, read as itself rather than through a cast. */
-const assignmentIn = (result: { readonly request: unknown }): AssignBuildingMaterialRequest =>
-  result.request as AssignBuildingMaterialRequest;
+const assignmentIn = (result: { readonly request?: unknown }): AssignBuildingMaterialRequest => {
+  // A resolved step is a Request or an Operation (platform Sprint 052.0): these tools carry the former.
+  if (result.request === undefined) throw new Error('expected a Request, not an Operation');
+  return result.request as AssignBuildingMaterialRequest;
+};
 
 /** A tool's declared arguments, which `ToolFunctionSchema` types loosely. */
 const argumentsOf = (schema: {
@@ -63,7 +66,10 @@ function serviceWith(
       : { wallFaceEnclosure: options.wallFaceEnclosure }),
     ...(options.selectedIds === undefined ? {} : { selectedIds: options.selectedIds })
   });
-  return { harness, intelligence: new ArchitecturalIntelligenceService({ knowledge: harness.knowledge }) };
+  return {
+    harness,
+    intelligence: new ArchitecturalIntelligenceService({ knowledge: harness.knowledge })
+  };
 }
 
 describe('what both tools refuse', () => {
@@ -114,8 +120,8 @@ describe('assigning to the selection', () => {
 
     expect(result?.kind).toBe('request');
     if (result?.kind !== 'request') return;
-    expect(result.request.type).toBe(ASSIGN_BUILDING_MATERIAL_REQUEST_TYPE);
-    expect(result.request).toMatchObject({
+    expect(assignmentIn(result).type).toBe(ASSIGN_BUILDING_MATERIAL_REQUEST_TYPE);
+    expect(assignmentIn(result)).toMatchObject({
       buildingMaterialId: BRICK,
       targets: [{ id: WALLS[0]!.id, type: 'Wall' }]
     });
